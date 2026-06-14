@@ -1,0 +1,21 @@
+{
+    "name": "Ghost White",
+    "colors": {
+        "center": "#C0C0C0",
+        "edge": "#0A0A0A",
+        "progress_arc": "rgba(200,200,200,200)",
+        "text": "#ffffff",
+        "text_shadow": "rgba(160,160,160,100)",
+        "button_hover": "rgba(200,200,200,20)"
+    },
+    "fonts": {
+        "time": { "family": "Consolas", "size": 24, "bold": true },
+        "state": { "family": "Consolas", "size": 7, "bold": false }
+    },
+    "ball": {
+        "size": 120,
+        "shadow_enabled": true,
+        "shadow_color": "rgba(200,200,200,50)",
+        "shadow_blur": 20
+    }
+}
