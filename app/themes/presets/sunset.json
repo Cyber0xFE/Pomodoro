@@ -10,7 +10,7 @@
     },
     "fonts": {
         "time": { "family": "Consolas", "size": 24, "bold": true },
-        "state": { "family": "Consolas", "size": 7, "bold": false }
+        "state": { "family": "Consolas", "size": 9, "bold": false }
     },
     "ball": {
         "size": 120,
