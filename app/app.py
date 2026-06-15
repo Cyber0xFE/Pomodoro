@@ -6,9 +6,10 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from app.core.constants import BALL_SIZE
+from app.core.constants import BALL_SIZE, DisplayMode
 from app.core.settings import SettingsManager
 from app.core.timer import PomodoroTimer
+from app.core.monitor import PerformanceMonitor
 from app.themes.theme_manager import ThemeManager
 from app.ui.context_menu import ContextMenu
 from app.ui.floating_ball import FloatingBall
@@ -24,12 +25,14 @@ class PomodoroApp:
         self._settings = SettingsManager()
         self._theme_manager = ThemeManager()
         self._timer = PomodoroTimer()
+        self._monitor = PerformanceMonitor()
 
         # 创建悬浮球
         self._ball = FloatingBall(
             timer=self._timer,
             settings=self._settings,
             theme_manager=self._theme_manager,
+            monitor=self._monitor,
         )
 
         # 创建右键菜单
@@ -38,6 +41,7 @@ class PomodoroApp:
             settings=self._settings,
             theme_manager=self._theme_manager,
             on_adjust_opacity=self._open_settings,
+            on_switch_mode=self._switch_display_mode,
         )
 
         # 连接右键信号
@@ -68,7 +72,12 @@ class PomodoroApp:
 
     def _show_context_menu(self):
         """在鼠标位置弹出右键菜单."""
+        self._context_menu.set_display_mode(self._ball.display_mode)
         self._context_menu.exec(self._ball.cursor().pos())
+
+    def _switch_display_mode(self, mode: DisplayMode):
+        """切换悬浮球显示模式."""
+        self._ball.set_display_mode(mode)
 
     def _open_settings(self):
         """打开设置对话框."""

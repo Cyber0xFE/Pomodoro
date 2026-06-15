@@ -3,14 +3,14 @@
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QMenu
 
-from app.core.constants import DURATION_OPTIONS
+from app.core.constants import DURATION_OPTIONS, DisplayMode
 from app.core.timer import PomodoroTimer
 from app.core.settings import SettingsManager
 from app.themes.theme_manager import ThemeManager
 
 
 class ContextMenu(QMenu):
-    """悬浮球右键菜单."""
+    """悬浮球右键菜单 — 根据显示模式动态构建."""
 
     def __init__(
         self,
@@ -18,6 +18,7 @@ class ContextMenu(QMenu):
         settings: SettingsManager,
         theme_manager: ThemeManager,
         on_adjust_opacity=None,
+        on_switch_mode=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -25,23 +26,48 @@ class ContextMenu(QMenu):
         self._settings = settings
         self._theme_manager = theme_manager
         self._on_adjust_opacity = on_adjust_opacity
+        self._on_switch_mode = on_switch_mode
+        self._current_mode = DisplayMode.POMODORO
 
         self._build_menu()
         self._apply_style()
 
+    def set_display_mode(self, mode: DisplayMode):
+        """同步当前显示模式，在 exec() 前调用."""
+        if mode != self._current_mode:
+            self._current_mode = mode
+            self.clear()
+            self._build_menu()
+
     def _build_menu(self):
-        """构建菜单项."""
-        # ── 设置时长 ──
-        duration_menu = self.addMenu("⏱ 设置时长")
-        for mins in DURATION_OPTIONS:
-            action = duration_menu.addAction(f"{mins} 分钟")
-            action.triggered.connect(self._make_duration_handler(mins))
+        """构建菜单项，根据当前显示模式调整."""
+        if self._current_mode == DisplayMode.POMODORO:
+            # ── 设置时长 ──
+            duration_menu = self.addMenu("⏱ 设置时长")
+            for mins in DURATION_OPTIONS:
+                action = duration_menu.addAction(f"{mins} 分钟")
+                action.triggered.connect(self._make_duration_handler(mins))
 
-        self.addSeparator()
+            self.addSeparator()
 
-        # ── 重置 ──
-        reset_action = self.addAction("🔄 重置计时器")
-        reset_action.triggered.connect(self._timer.reset)
+            # ── 重置 ──
+            reset_action = self.addAction("🔄 重置计时器")
+            reset_action.triggered.connect(self._timer.reset)
+
+            self.addSeparator()
+
+        # ── 模式切换 ──
+        if self._current_mode == DisplayMode.POMODORO:
+            mode_action = self.addAction("📊 切换到性能监控")
+            target_mode = DisplayMode.MONITOR
+        else:
+            mode_action = self.addAction("⏱ 切换到番茄钟")
+            target_mode = DisplayMode.POMODORO
+
+        if self._on_switch_mode:
+            mode_action.triggered.connect(
+                self._make_mode_switch_handler(target_mode)
+            )
 
         self.addSeparator()
 
@@ -73,6 +99,13 @@ class ContextMenu(QMenu):
         def handler():
             self._theme_manager.apply(name)
             self._settings.theme = name
+        return handler
+
+    def _make_mode_switch_handler(self, target_mode: DisplayMode):
+        """创建模式切换的回调."""
+        def handler():
+            if self._on_switch_mode:
+                self._on_switch_mode(target_mode)
         return handler
 
     def _on_open_settings(self):

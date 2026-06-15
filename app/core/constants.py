@@ -10,8 +10,15 @@ class TimerState(Enum):
     PAUSED = "paused"
 
 
+class DisplayMode(Enum):
+    """悬浮球显示模式."""
+    POMODORO = "pomodoro"
+    MONITOR = "monitor"
+
+
 # 悬浮球默认尺寸（像素）
 BALL_SIZE = 120
+MONITOR_BALL_SIZE = 150
 
 # 默认设置值
 DEFAULT_SETTINGS = {
@@ -32,3 +39,7 @@ DURATION_OPTIONS = [10, 15, 20, 25, 30, 45, 50]
 OPACITY_MIN = 0.1
 OPACITY_MAX = 1.0
 OPACITY_STEP = 0.05
+
+# 性能监控动画参数
+ANIM_FRAME_MS = 33       # 动画帧间隔 ~30fps
+ANIM_SMOOTHING = 0.20     # EMA 平滑系数
