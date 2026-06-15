@@ -1,20 +1,20 @@
-# 构建产物
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Build artifacts
 build/
 dist/
 *.spec
-
-# Python 缓存
-__pycache__/
-*.pyc
-*.pyo
+*.egg-info/
 
 # IDE
 .vscode/
 .idea/
 *.swp
-*.swo
 
-# 虚拟环境
-venv/
-.venv/
-env/
+# OS
+.DS_Store
+Thumbs.db

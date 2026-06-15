@@ -75,16 +75,20 @@ class PomodoroTimer(QObject):
         self._set_state(TimerState.PAUSED)
 
     def toggle(self):
-        """切换 运行/暂停."""
+        """切换 运行/暂停.
+
+        如果计时器已完成（IDLE 且 remaining = 0），则重置到初始时长.
+        """
         if self._state == TimerState.RUNNING:
             self.pause()
         elif self._state == TimerState.PAUSED:
             self.start()
         else:
-            # IDLE 状态：首次启动
+            # IDLE 状态：若剩余时间为 0（已完成），则重置；否则启动
             if self._remaining <= 0:
-                return
-            self.start()
+                self.reset()
+            else:
+                self.start()
 
     def reset(self):
         """重置计时器到初始时长."""
