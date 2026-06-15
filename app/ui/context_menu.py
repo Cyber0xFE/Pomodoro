@@ -88,9 +88,10 @@ class ContextMenu(QMenu):
                 border: 1px solid #444;
                 border-radius: 6px;
                 padding: 4px 0;
+                font-size: 14px;
             }
             QMenu::item {
-                padding: 6px 28px 6px 18px;
+                padding: 8px 32px 8px 20px;
             }
             QMenu::item:selected {
                 background-color: #3a3a3a;
