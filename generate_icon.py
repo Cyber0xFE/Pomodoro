@@ -1,24 +1,23 @@
-"""生成应用图标 — 仿照参考 HUD 风格.
+"""生成应用图标 — Neon Cyan HUD 风格，中心显示 "25".
 
-参考图特征:
-- 深灰蓝球体
-- 双层霓虹青色光晕外环
-- 12 个白色刻度（4 个粗大主刻度在 3/6/9/12 点）
-- 中心大号时间数字（白底蓝字）
-- 下方 "STANDBY" 状态文字
+特征:
+- 深色球体背景 (Neon Cyan 主题的 edge 色 #0D1117)
+- 双层霓虹青色光晕外环 (#00F0FF)
+- 12 个刻度（4 个主刻度在 3/6/9/12 点）
+- 中心大号数字 "25"（霓虹青色）
 """
 
 from PIL import Image, ImageDraw, ImageFont
+import math
 
 SIZES = [16, 32, 48, 256]
 
-NEON = (107, 230, 240)       # 霓虹青（与参考图接近）
-NEON_BRIGHT = (160, 240, 245)
-BG_OUTER = (52, 65, 85)       # 球体外圈深蓝灰
-BG_INNER = (38, 50, 68)       # 球体内圈更深
-DARK = (28, 38, 52)
+# Neon Cyan 主题配色
+NEON = (0, 240, 255)           # #00F0FF — 霓虹青
+NEON_BRIGHT = (80, 245, 255)   # 稍亮的霓虹青（用于高光）
+BG_OUTER = (20, 28, 38)        # 球体外圈（比 edge 稍亮）
+BG_INNER = (13, 17, 23)        # 球体内圈 = #0D1117 (edge)
 WHITE = (255, 255, 255)
-TEXT_BLUE = (90, 200, 230)
 
 
 def get_font(size_px: int, bold: bool = True):
@@ -64,7 +63,7 @@ def draw_icon(size: int) -> Image.Image:
         fill=NEON_BRIGHT + (150,),
     )
 
-    # ── 球体外圈（较亮的环） ──
+    # ── 球体外圈 ──
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=BG_OUTER)
 
     # ── 球体内圈（更深） ──
@@ -74,9 +73,7 @@ def draw_icon(size: int) -> Image.Image:
 
     # ── 12 个刻度线 ──
     for i in range(12):
-        angle_deg = i * 30 - 90
-        import math
-        angle = math.radians(angle_deg)
+        angle = math.radians(i * 30 - 90)
 
         is_main = i % 3 == 0
         if is_main:
@@ -96,49 +93,28 @@ def draw_icon(size: int) -> Image.Image:
         y2 = cy + outer_r * math.sin(angle)
         draw.line([x1, y1, x2, y2], fill=color, width=tick_w)
 
-    # ── 中心时间文字（白底蓝字） ──
+    # ── 中心数字 "25" ──
     if size >= 48:
-        time_text = "10:00"
-        font_size = int(size * 0.32)
+        text = "25"
+        font_size = int(size * 0.38)
         font = get_font(font_size, bold=True)
 
         # 测量文字尺寸
-        bbox = draw.textbbox((0, 0), time_text, font=font)
+        bbox = draw.textbbox((0, 0), text, font=font)
         tw = bbox[2] - bbox[0]
         th = bbox[3] - bbox[1]
 
-        # 白底圆角矩形
-        pad_x = size * 0.04
-        pad_y = size * 0.015
-        box_x = cx - tw / 2 - pad_x
-        box_y = cy - th / 2 - pad_y - size * 0.02
-        draw.rounded_rectangle(
-            [box_x, box_y, box_x + tw + pad_x * 2, box_y + th + pad_y * 2],
-            radius=int(size * 0.04),
-            fill=WHITE,
-        )
-        # 蓝色文字
+        # 文字居中绘制（霓虹青色，直接显示在深色背景上）
         tx = cx - tw / 2 - bbox[0]
-        ty = cy - th / 2 - bbox[1] - size * 0.02
-        draw.text((tx, ty), time_text, fill=TEXT_BLUE, font=font)
-
-        # ── 状态文字 "STANDBY" ──
-        status_font = get_font(int(size * 0.06), bold=False)
-        status_text = "STANDBY"
-        sbbox = draw.textbbox((0, 0), status_text, font=status_font)
-        sw = sbbox[2] - sbbox[0]
-        sx = cx - sw / 2 - sbbox[0]
-        sy = cy + size * 0.16 - sbbox[1]
-        draw.text((sx, sy), status_text, fill=NEON_BRIGHT, font=status_font)
+        ty = cy - th / 2 - bbox[1]
+        draw.text((tx, ty), text, fill=NEON, font=font)
 
     return img
 
 
 def draw_icon_small(size: int) -> Image.Image:
     """小尺寸（16/32）专用：超采样 + 简化元素 + 边缘羽化."""
-    import math
     from PIL import ImageFilter
-    # 8x 超采样 + 8 倍细节
     ss = 8
     big_size = size * ss
     img = Image.new("RGBA", (big_size, big_size), (0, 0, 0, 0))
@@ -160,7 +136,7 @@ def draw_icon_small(size: int) -> Image.Image:
     draw.ellipse([cx - r, cy - r, cx + r, cy + r],
                  fill=None, outline=NEON_BRIGHT + (220,), width=sw)
 
-    # 只画 4 个主刻度（3/6/9/12 点），避免小元素过多
+    # 只画 4 个主刻度（3/6/9/12 点）
     for i in [0, 3, 6, 9]:
         angle = math.radians(i * 30 - 90)
         inner_r = r - big_size * 0.10
@@ -172,32 +148,26 @@ def draw_icon_small(size: int) -> Image.Image:
         lw = max(2, int(big_size * 0.035))
         draw.line([x1, y1, x2, y2], fill=NEON_BRIGHT + (240,), width=lw)
 
-    # 中心实心圆（不画十字，避免在 16px 上变成像素块）
+    # 中心小圆点（小尺寸无法显示 "25" 文字）
     cr = max(2, int(big_size * 0.10))
     draw.ellipse([cx - cr, cy - cr, cx + cr, cy + cr],
                  fill=NEON_BRIGHT + (255,))
 
     # 高质量缩回
     result = img.resize((size, size), Image.LANCZOS)
-    # 轻微平滑，进一步消除锯齿
     result = result.filter(ImageFilter.SMOOTH)
     return result
 
 
 def main():
-    images = []
-    for s in SIZES:
-        if s >= 48:
-            images.append(draw_icon(s))
-        else:
-            images.append(draw_icon_small(s))
-
     output = "app/assets/icons/pomodoro.ico"
-    images[0].save(
+
+    # 用最大尺寸绘制，让 PIL 自动缩放出其他尺寸
+    master = draw_icon(256)
+    master.save(
         output,
         format="ICO",
         sizes=[(s, s) for s in SIZES],
-        append_images=images[1:],
     )
     print(f"Icon saved: {output}")
 
