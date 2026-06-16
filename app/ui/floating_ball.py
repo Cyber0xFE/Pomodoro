@@ -694,4 +694,7 @@ class FloatingBall(QWidget):
             return "● ACTIVE"
         elif state == TimerState.PAUSED:
             return "◉ PAUSED"
+        # 倒计时结束显示 ✓ 时 → DONE；否则就绪态 → STANDBY
+        if self._display_text == "✓":
+            return "◎ DONE"
         return "◎ STANDBY"
