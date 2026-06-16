@@ -67,6 +67,7 @@ class FloatingBall(QWidget):
 
         # 翻转动画
         self._flip_scale = 1.0
+        self._monitor_flip_scale = 1.0
 
         # 监控子视图: "metrics" 或 "network"
         self._monitor_sub = "metrics"
@@ -132,6 +133,15 @@ class FloatingBall(QWidget):
 
     flip_scale = Property(float, get_flip_scale, set_flip_scale)
 
+    def get_monitor_flip_scale(self) -> float:
+        return self._monitor_flip_scale
+
+    def set_monitor_flip_scale(self, value: float):
+        self._monitor_flip_scale = value
+        self.update()
+
+    monitor_flip_scale = Property(float, get_monitor_flip_scale, set_monitor_flip_scale)
+
     def set_display_mode(self, mode: DisplayMode):
         if mode == self._display_mode or getattr(self, '_switching_mode', False):
             return
@@ -179,6 +189,37 @@ class FloatingBall(QWidget):
 
     def _on_flip_done(self):
         self._switching_mode = False
+
+    # ── 监控子视图垂直翻页动画 ────────────────────────
+
+    def _start_monitor_flip(self):
+        """启动监控子视图垂直翻页动画."""
+        if getattr(self, '_sub_flipping', False):
+            return
+        self._sub_flipping = True
+
+        self._sub_flip_in = QPropertyAnimation(self, b"monitor_flip_scale")
+        self._sub_flip_in.setDuration(100)
+        self._sub_flip_in.setEasingCurve(QEasingCurve.Type.InQuad)
+        self._sub_flip_in.setStartValue(1.0)
+        self._sub_flip_in.setEndValue(0.0)
+        self._sub_flip_in.finished.connect(self._on_monitor_flip_mid)
+        self._sub_flip_in.start()
+
+    def _on_monitor_flip_mid(self):
+        self._monitor_sub = "network" if self._monitor_sub == "metrics" else "metrics"
+        self.update()
+
+        self._sub_flip_out = QPropertyAnimation(self, b"monitor_flip_scale")
+        self._sub_flip_out.setDuration(130)
+        self._sub_flip_out.setEasingCurve(QEasingCurve.Type.OutBack)
+        self._sub_flip_out.setStartValue(0.0)
+        self._sub_flip_out.setEndValue(1.0)
+        self._sub_flip_out.finished.connect(self._on_monitor_flip_done)
+        self._sub_flip_out.start()
+
+    def _on_monitor_flip_done(self):
+        self._sub_flipping = False
 
     def closeEvent(self, event):
         """退出时保存窗口位置."""
@@ -264,8 +305,7 @@ class FloatingBall(QWidget):
             return
 
         if self._display_mode == DisplayMode.MONITOR:
-            self._monitor_sub = "network" if self._monitor_sub == "metrics" else "metrics"
-            self.update()
+            self._start_monitor_flip()
             event.accept()
             return
         else:
@@ -416,13 +456,22 @@ class FloatingBall(QWidget):
         neon = QColor(self._neon)
         bg = QColor(self._bg)
 
-        # ── 外层辉光 ──
+        # ── 外层辉光（不受翻页影响） ──
         for i, alpha in enumerate([25, 45, 65]):
             glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), 6 + i * 4)
             glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(glow_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(ball_rect.adjusted(-2 - i * 2, -2 - i * 2, 2 + i * 2, 2 + i * 2))
+
+        # ── 球心区域垂直翻页 ──
+        painter.save()
+        if self._monitor_flip_scale < 1.0:
+            t = QTransform()
+            t.translate(cx, cy)
+            t.scale(1.0, self._monitor_flip_scale)
+            t.translate(-cx, -cy)
+            painter.setTransform(t, True)
 
         # ── 球体背景 ──
         gradient = QRadialGradient(QPointF(cx - r * 0.15, cy - r * 0.25), r * 1.1)
@@ -442,6 +491,8 @@ class FloatingBall(QWidget):
             self._paint_monitor_metrics(painter, g, d, cx, cy, r, neon, bg, ball_rect)
         else:
             self._paint_monitor_network(painter, cx, cy, r, neon)
+
+        painter.restore()
 
     def _paint_monitor_metrics(self, painter, g, d, cx, cy, r, neon, bg, ball_rect):
         """监控子视图：CPU 弧线 + 内存水位线."""
