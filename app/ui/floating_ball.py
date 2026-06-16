@@ -3,10 +3,10 @@
 import math
 import winsound
 
-from PySide6.QtCore import QPropertyAnimation, QPointF, Qt, QPoint, QRectF, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, Property, QPropertyAnimation, QPointF, Qt, QPoint, QRectF, QTimer, Signal
 from PySide6.QtGui import (
     QBrush, QColor, QFont, QMouseEvent, QPainter,
-    QPainterPath, QPen, QRadialGradient, QWheelEvent, QLinearGradient,
+    QPainterPath, QPen, QRadialGradient, QTransform, QWheelEvent, QLinearGradient,
 )
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -65,6 +65,9 @@ class FloatingBall(QWidget):
         # 显示模式
         self._display_mode = DisplayMode.POMODORO
 
+        # 翻转动画
+        self._flip_scale = 1.0
+
         # 监控子视图: "metrics" 或 "network"
         self._monitor_sub = "metrics"
 
@@ -119,21 +122,32 @@ class FloatingBall(QWidget):
     def display_mode(self) -> DisplayMode:
         return self._display_mode
 
+    # Qt property 支持动画
+    def get_flip_scale(self) -> float:
+        return self._flip_scale
+
+    def set_flip_scale(self, value: float):
+        self._flip_scale = value
+        self.update()
+
+    flip_scale = Property(float, get_flip_scale, set_flip_scale)
+
     def set_display_mode(self, mode: DisplayMode):
         if mode == self._display_mode or getattr(self, '_switching_mode', False):
             return
         self._switching_mode = True
         self._pending_mode = mode
 
-        # 淡出
-        self._fade_out = QPropertyAnimation(self, b"windowOpacity")
-        self._fade_out.setDuration(120)
-        self._fade_out.setStartValue(self.windowOpacity())
-        self._fade_out.setEndValue(0.0)
-        self._fade_out.finished.connect(self._on_fade_out_done)
-        self._fade_out.start()
+        # 压缩
+        self._flip_in = QPropertyAnimation(self, b"flip_scale")
+        self._flip_in.setDuration(100)
+        self._flip_in.setEasingCurve(QEasingCurve.Type.InQuad)
+        self._flip_in.setStartValue(1.0)
+        self._flip_in.setEndValue(0.0)
+        self._flip_in.finished.connect(self._on_flip_mid)
+        self._flip_in.start()
 
-    def _on_fade_out_done(self):
+    def _on_flip_mid(self):
         mode = self._pending_mode
         self._display_mode = mode
         if mode == DisplayMode.MONITOR:
@@ -154,16 +168,16 @@ class FloatingBall(QWidget):
             self._display_text = _format_time(total) if total > 0 else "--:--"
         self.update()
 
-        # 淡入
-        saved = self._settings.opacity
-        self._fade_in = QPropertyAnimation(self, b"windowOpacity")
-        self._fade_in.setDuration(150)
-        self._fade_in.setStartValue(0.0)
-        self._fade_in.setEndValue(saved)
-        self._fade_in.finished.connect(self._on_fade_in_done)
-        self._fade_in.start()
+        # 展开
+        self._flip_out = QPropertyAnimation(self, b"flip_scale")
+        self._flip_out.setDuration(130)
+        self._flip_out.setEasingCurve(QEasingCurve.Type.OutBack)
+        self._flip_out.setStartValue(0.0)
+        self._flip_out.setEndValue(1.0)
+        self._flip_out.finished.connect(self._on_flip_done)
+        self._flip_out.start()
 
-    def _on_fade_in_done(self):
+    def _on_flip_done(self):
         self._switching_mode = False
 
     def closeEvent(self, event):
@@ -277,6 +291,18 @@ class FloatingBall(QWidget):
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # 翻转变换（球心为中心水平缩放）
+        if self._flip_scale < 1.0:
+            g = self._glow
+            r = self._ball_diameter / 2.0
+            cx = g + r
+            cy = g + r
+            t = QTransform()
+            t.translate(cx, cy)
+            t.scale(self._flip_scale, 1.0)
+            t.translate(-cx, -cy)
+            painter.setTransform(t)
 
         if self._display_mode == DisplayMode.MONITOR:
             self._paint_monitor(painter)
