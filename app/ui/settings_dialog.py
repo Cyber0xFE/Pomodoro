@@ -3,8 +3,9 @@
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QHBoxLayout, QKeySequenceEdit, QLabel,
-    QMessageBox, QPushButton, QSlider, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QHBoxLayout, QKeySequenceEdit,
+    QLabel, QMessageBox, QPushButton, QSlider, QSpinBox, QVBoxLayout,
+    QWidget,
 )
 
 from app.core.constants import OPACITY_MIN, OPACITY_MAX
@@ -35,7 +36,7 @@ class SettingsDialog(QDialog):
         self._settings = settings
 
         self.setWindowTitle("番茄钟设置")
-        self.setFixedSize(390, 310)
+        self.setFixedSize(390, 350)
         self.setStyleSheet("font-size: 14px;")
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
@@ -89,6 +90,22 @@ class SettingsDialog(QDialog):
         self._sound_check = QCheckBox("计时结束时播放提示音")
         layout.addWidget(self._sound_check)
 
+        # ── 开机启动 ──
+        self._autostart_check = QCheckBox("开机自动启动")
+        layout.addWidget(self._autostart_check)
+
+        # ── 默认启动模式 ──
+        mode_layout = QHBoxLayout()
+        mode_label = QLabel("默认启动模式:")
+        mode_label.setFixedWidth(130)
+        self._startup_mode_combo = QComboBox()
+        self._startup_mode_combo.addItem("番茄钟", "pomodoro")
+        self._startup_mode_combo.addItem("性能监控", "monitor")
+        mode_layout.addWidget(mode_label)
+        mode_layout.addWidget(self._startup_mode_combo)
+        mode_layout.addStretch()
+        layout.addLayout(mode_layout)
+
         # ── 全局热键 ──
         hotkey_layout = QHBoxLayout()
         hotkey_label = QLabel("显示/隐藏热键:")
@@ -127,6 +144,10 @@ class SettingsDialog(QDialog):
         self._opacity_slider.setValue(opacity_int)
         self._opacity_label.setText(f"{opacity_int}%")
         self._sound_check.setChecked(self._settings.sound_enabled)
+        self._autostart_check.setChecked(self._settings.auto_start)
+        idx = self._startup_mode_combo.findData(self._settings.startup_mode)
+        if idx >= 0:
+            self._startup_mode_combo.setCurrentIndex(idx)
         self._hotkey_edit.setKeySequence(QKeySequence(self._settings.hotkey))
 
     def _on_save(self):
@@ -137,6 +158,8 @@ class SettingsDialog(QDialog):
         self._settings.duration_seconds = total
         self._settings.opacity = self._opacity_slider.value() / 100.0
         self._settings.sound_enabled = self._sound_check.isChecked()
+        self._settings.auto_start = self._autostart_check.isChecked()
+        self._settings.startup_mode = self._startup_mode_combo.currentData()
 
         # 保存热键 — 必须有修饰键
         ks = self._hotkey_edit.keySequence()

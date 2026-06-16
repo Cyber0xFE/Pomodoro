@@ -31,6 +31,8 @@ DEFAULT_SETTINGS = {
     "always_on_top": True,
     "hotkey": "Ctrl+Shift+F11",
     "hotkey_enabled": True,
+    "auto_start": False,
+    "startup_mode": "pomodoro",
 }
 
 # 预设时长选项（分钟）

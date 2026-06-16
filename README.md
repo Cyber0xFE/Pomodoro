@@ -57,6 +57,7 @@ python generate_icon.py
 pyinstaller --onefile --noconsole --name "PomodoroBall" \
   --icon "app/assets/icons/pomodoro.ico" \
   --add-data "app/themes/presets/*.json;app/themes/presets/" \
+  --add-data "app/assets/icons/pomodoro.ico;app/assets/icons/" \
   main.py
 ```
 

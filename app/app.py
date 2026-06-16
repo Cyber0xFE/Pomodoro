@@ -1,10 +1,21 @@
 """应用程序启动与模块组装."""
 
+import os
 import sys
+import winreg
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QAction
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+
+
+def _resource_path(relative_path: str) -> str:
+    """获取资源文件路径，兼容 PyInstaller 打包和开发模式."""
+    if getattr(sys, "frozen", False):
+        base = sys._MEIPASS  # type: ignore[attr-defined]
+    else:
+        base = os.path.abspath(".")
+    return os.path.join(base, relative_path)
 
 from app.core.constants import BALL_SIZE, DisplayMode, DURATION_OPTIONS
 from app.core.settings import SettingsManager
@@ -16,13 +27,14 @@ from app.ui.floating_ball import FloatingBall
 from app.ui.settings_dialog import SettingsDialog
 from app.utils.hotkey import register_hotkey, unregister_hotkey, parse_hotkey
 from app.utils.screen_utils import get_default_position
-from app.utils.single_instance import is_already_running
+from app.utils.single_instance import acquire_app_lock
 
 
 class PomodoroApp:
     """番茄钟应用主控制器."""
 
-    def __init__(self):
+    def __init__(self, app_lock):
+        self._app_lock = app_lock  # 持有引用防止 GC 回收
         self._settings = SettingsManager()
         self._theme_manager = ThemeManager()
         self._timer = PomodoroTimer()
@@ -52,6 +64,9 @@ class PomodoroApp:
         # 连接热键信号
         self._ball.hotkey_pressed.connect(self._toggle_visibility)
 
+        # 监听设置变更（开机启动等需要即时生效的项）
+        self._settings.setting_changed.connect(self._on_setting_changed)
+
         # 初始主题
         saved_theme = self._settings.theme
         self._theme_manager.apply(saved_theme)
@@ -65,6 +80,11 @@ class PomodoroApp:
 
         # 系统托盘
         self._setup_tray()
+
+        # 默认启动模式
+        if self._settings.startup_mode == "monitor":
+            self._ball.set_display_mode(DisplayMode.MONITOR)
+            self._tray_mode_action.setText("切换至番茄钟")
 
     def show(self):
         """显示悬浮球."""
@@ -105,7 +125,7 @@ class PomodoroApp:
 
     def _setup_tray(self):
         """创建系统托盘图标和菜单."""
-        icon_path = "app/assets/icons/pomodoro.ico"
+        icon_path = _resource_path("app/assets/icons/pomodoro.ico")
         self._tray = QSystemTrayIcon(QIcon(icon_path), self._ball)
         self._tray.setToolTip("番茄钟悬浮球")
 
@@ -228,6 +248,36 @@ class PomodoroApp:
         if register_hotkey(hwnd, modifiers, vk):
             self._hotkey_hwnd = hwnd
 
+    # ── 开机启动 ──────────────────────────────────────
+
+    _AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+    _AUTOSTART_NAME = "PomodoroBall"
+
+    def _on_setting_changed(self, key: str, value):
+        """设置变更回调，处理需即时生效的项."""
+        if key == "auto_start":
+            self._toggle_autostart(value)
+
+    def _toggle_autostart(self, enabled: bool):
+        """写入或删除开机启动注册表项."""
+        try:
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, self._AUTOSTART_KEY, 0,
+                winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE)
+        except OSError:
+            return
+
+        if enabled:
+            exe_path = sys.executable
+            winreg.SetValueEx(key, self._AUTOSTART_NAME, 0,
+                              winreg.REG_SZ, f'"{exe_path}"')
+        else:
+            try:
+                winreg.DeleteValue(key, self._AUTOSTART_NAME)
+            except FileNotFoundError:
+                pass
+        key.Close()
+
 
 def main():
     """应用入口."""
@@ -241,12 +291,13 @@ def main():
     app.setQuitOnLastWindowClosed(False)
 
     # 单实例检测
-    if is_already_running():
+    app_lock = acquire_app_lock()
+    if app_lock is None:
         print("番茄钟已在运行中")
         sys.exit(0)
 
     # 启动
-    pomodoro = PomodoroApp()
+    pomodoro = PomodoroApp(app_lock)
     pomodoro.show()
 
     sys.exit(app.exec())

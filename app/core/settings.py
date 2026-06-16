@@ -127,3 +127,19 @@ class SettingsManager(QObject):
     @hotkey_enabled.setter
     def hotkey_enabled(self, value: bool):
         self.set("hotkey_enabled", value)
+
+    @property
+    def auto_start(self) -> bool:
+        return self.get("auto_start")
+
+    @auto_start.setter
+    def auto_start(self, value: bool):
+        self.set("auto_start", value)
+
+    @property
+    def startup_mode(self) -> str:
+        return self.get("startup_mode")
+
+    @startup_mode.setter
+    def startup_mode(self, value: str):
+        self.set("startup_mode", value)

@@ -17,10 +17,11 @@ python main.py
 # 生成应用图标（修改 generate_icon.py 后）
 python generate_icon.py
 
-# 打包为 EXE（单文件、无控制台、嵌入图标、含主题数据文件）
+# 打包为 EXE（单文件、无控制台、嵌入图标、含主题+图标数据文件）
 pyinstaller --onefile --noconsole --name "PomodoroBall" \
   --icon "app/assets/icons/pomodoro.ico" \
   --add-data "app/themes/presets/*.json;app/themes/presets/" \
+  --add-data "app/assets/icons/pomodoro.ico;app/assets/icons/" \
   main.py
 
 # 清理构建缓存（必要时）
