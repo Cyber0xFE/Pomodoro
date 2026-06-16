@@ -90,8 +90,9 @@ class ContextMenu(QMenu):
     def _make_duration_handler(self, mins: int):
         """创建时长设置的回调."""
         def handler():
-            self._settings.duration_minutes = mins
-            self._timer.set_duration(mins)
+            total_secs = mins * 60
+            self._settings.duration_seconds = total_secs
+            self._timer.set_duration(total_secs)
         return handler
 
     def _make_theme_handler(self, name: str):

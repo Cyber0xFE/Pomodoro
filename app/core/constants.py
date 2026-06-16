@@ -21,7 +21,7 @@ BALL_SIZE = 120
 
 # 默认设置值
 DEFAULT_SETTINGS = {
-    "duration_minutes": 25,
+    "duration_seconds": 1500,
     "theme": "Neon Cyan",
     "opacity": 0.85,
     "window_x": -1,

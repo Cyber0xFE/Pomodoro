@@ -54,10 +54,12 @@ class PomodoroTimer(QObject):
 
     # ── 操作 ──────────────────────────────────────────
 
-    def set_duration(self, minutes: int):
-        """设置倒计时时长，同时重置计时器."""
+    def set_duration(self, total_seconds: int):
+        """设置倒计时时长（秒），同时重置计时器."""
+        if total_seconds <= 0:
+            return
         self._qtimer.stop()
-        self._total = minutes * 60
+        self._total = total_seconds
         self._remaining = self._total
         self._set_state(TimerState.IDLE)
         self.tick.emit(self._remaining)

@@ -57,7 +57,7 @@ class PomodoroApp:
         self._theme_manager.apply(saved_theme)
 
         # 初始时长
-        saved_duration = self._settings.duration_minutes
+        saved_duration = self._settings.duration_seconds
         self._timer.set_duration(saved_duration)
 
         # 位置
@@ -94,7 +94,7 @@ class PomodoroApp:
         dialog = SettingsDialog(self._settings, self._ball)
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
             # 设置已保存，同步到计时器
-            new_duration = self._settings.duration_minutes
+            new_duration = self._settings.duration_seconds
             self._timer.set_duration(new_duration)
             self._timer.reset()
             # 热键可能已修改，重新注册
@@ -182,9 +182,10 @@ class PomodoroApp:
             self._tray_toggle_action.setText("显示悬浮球")
 
     def _set_duration(self, minutes: int):
-        """设置番茄钟时长."""
-        self._settings.duration_minutes = minutes
-        self._timer.set_duration(minutes)
+        """设置番茄钟时长（从预设分钟数）."""
+        total_secs = minutes * 60
+        self._settings.duration_seconds = total_secs
+        self._timer.set_duration(total_secs)
         self._timer.reset()
 
     def _apply_theme(self, name: str):

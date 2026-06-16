@@ -49,12 +49,20 @@ class SettingsManager(QObject):
     # ── 便捷属性 ──────────────────────────────────────
 
     @property
-    def duration_minutes(self) -> int:
-        return self.get("duration_minutes")
+    def duration_seconds(self) -> int:
+        """总秒数，带旧版 duration_minutes 迁移."""
+        value = self._settings.value("duration_seconds")
+        if value is not None:
+            return int(value)
+        # 向后兼容：从旧版 duration_minutes 迁移
+        old = self._settings.value("duration_minutes")
+        if old is not None:
+            return int(old) * 60
+        return DEFAULT_SETTINGS["duration_seconds"]
 
-    @duration_minutes.setter
-    def duration_minutes(self, value: int):
-        self.set("duration_minutes", value)
+    @duration_seconds.setter
+    def duration_seconds(self, value: int):
+        self.set("duration_seconds", int(value))
 
     @property
     def theme(self) -> str:

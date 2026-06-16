@@ -35,7 +35,7 @@ class SettingsDialog(QDialog):
         self._settings = settings
 
         self.setWindowTitle("番茄钟设置")
-        self.setFixedSize(360, 310)
+        self.setFixedSize(390, 310)
         self.setStyleSheet("font-size: 14px;")
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
@@ -51,13 +51,19 @@ class SettingsDialog(QDialog):
 
         # ── 时长设置 ──
         duration_layout = QHBoxLayout()
-        duration_label = QLabel("默认时长（分钟）:")
+        duration_label = QLabel("默认时长:")
         duration_label.setFixedWidth(130)
-        self._duration_spin = QSpinBox()
-        self._duration_spin.setRange(1, 120)
-        self._duration_spin.setSuffix(" 分钟")
+        self._duration_min_spin = QSpinBox()
+        self._duration_min_spin.setRange(0, 120)
+        self._duration_min_spin.setSuffix(" 分钟")
+        self._duration_min_spin.setFixedWidth(105)
+        self._duration_sec_spin = QSpinBox()
+        self._duration_sec_spin.setRange(0, 59)
+        self._duration_sec_spin.setSuffix(" 秒")
+        self._duration_sec_spin.setFixedWidth(90)
         duration_layout.addWidget(duration_label)
-        duration_layout.addWidget(self._duration_spin)
+        duration_layout.addWidget(self._duration_min_spin)
+        duration_layout.addWidget(self._duration_sec_spin)
         duration_layout.addStretch()
         layout.addLayout(duration_layout)
 
@@ -114,7 +120,9 @@ class SettingsDialog(QDialog):
 
     def _load_current_values(self):
         """从 SettingsManager 加载当前值."""
-        self._duration_spin.setValue(self._settings.duration_minutes)
+        total = self._settings.duration_seconds
+        self._duration_min_spin.setValue(total // 60)
+        self._duration_sec_spin.setValue(total % 60)
         opacity_int = int(self._settings.opacity * 100)
         self._opacity_slider.setValue(opacity_int)
         self._opacity_label.setText(f"{opacity_int}%")
@@ -123,7 +131,10 @@ class SettingsDialog(QDialog):
 
     def _on_save(self):
         """保存设置."""
-        self._settings.duration_minutes = self._duration_spin.value()
+        total = self._duration_min_spin.value() * 60 + self._duration_sec_spin.value()
+        if total <= 0:
+            total = 60  # 至少 1 分钟
+        self._settings.duration_seconds = total
         self._settings.opacity = self._opacity_slider.value() / 100.0
         self._settings.sound_enabled = self._sound_check.isChecked()
 
