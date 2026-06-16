@@ -11,7 +11,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QApplication, QWidget
 
 from app.core.constants import (
-    BALL_SIZE, MONITOR_BALL_SIZE, OPACITY_MIN, OPACITY_MAX, OPACITY_STEP,
+    BALL_SIZE, OPACITY_MIN, OPACITY_MAX, OPACITY_STEP,
     TimerState, DisplayMode, ANIM_FRAME_MS, ANIM_SMOOTHING,
 )
 from app.core.timer import PomodoroTimer
@@ -65,11 +65,18 @@ class FloatingBall(QWidget):
         # 显示模式
         self._display_mode = DisplayMode.POMODORO
 
+        # 监控子视图: "metrics" 或 "network"
+        self._monitor_sub = "metrics"
+
         # 监控目标值
         self._target_cpu = 0.0
         self._target_mem = 0.0
         self._target_net_sent = 0.0
         self._target_net_recv = 0.0
+
+        # 网速动态上限（渐进回落）
+        self._net_sent_ceiling = 1024.0
+        self._net_recv_ceiling = 1024.0
 
         # 监控动画插值
         self._anim_cpu = 0.0
@@ -113,8 +120,21 @@ class FloatingBall(QWidget):
         return self._display_mode
 
     def set_display_mode(self, mode: DisplayMode):
-        if mode == self._display_mode:
+        if mode == self._display_mode or getattr(self, '_switching_mode', False):
             return
+        self._switching_mode = True
+        self._pending_mode = mode
+
+        # 淡出
+        self._fade_out = QPropertyAnimation(self, b"windowOpacity")
+        self._fade_out.setDuration(120)
+        self._fade_out.setStartValue(self.windowOpacity())
+        self._fade_out.setEndValue(0.0)
+        self._fade_out.finished.connect(self._on_fade_out_done)
+        self._fade_out.start()
+
+    def _on_fade_out_done(self):
+        mode = self._pending_mode
         self._display_mode = mode
         if mode == DisplayMode.MONITOR:
             if self._timer.is_running:
@@ -125,18 +145,32 @@ class FloatingBall(QWidget):
             self._anim_mem = 0.0
             self._target_net_sent = 0.0
             self._target_net_recv = 0.0
-            self._ball_diameter = MONITOR_BALL_SIZE
             self._monitor.start()
             self._anim_timer.start()
         else:
             self._monitor.stop()
             self._anim_timer.stop()
-            self._ball_diameter = BALL_SIZE
             total = self._timer.total
             self._display_text = _format_time(total) if total > 0 else "--:--"
-        glow = 20
-        self.setFixedSize(self._ball_diameter + glow * 2, self._ball_diameter + glow * 2)
         self.update()
+
+        # 淡入
+        saved = self._settings.opacity
+        self._fade_in = QPropertyAnimation(self, b"windowOpacity")
+        self._fade_in.setDuration(150)
+        self._fade_in.setStartValue(0.0)
+        self._fade_in.setEndValue(saved)
+        self._fade_in.finished.connect(self._on_fade_in_done)
+        self._fade_in.start()
+
+    def _on_fade_in_done(self):
+        self._switching_mode = False
+
+    def closeEvent(self, event):
+        """退出时保存窗口位置."""
+        self._settings.window_x = self.x()
+        self._settings.window_y = self.y()
+        super().closeEvent(event)
 
     # ── 圆形命中测试 ──────────────────────────────────
 
@@ -165,6 +199,11 @@ class FloatingBall(QWidget):
             event.accept()
         elif event.button() == Qt.MouseButton.RightButton:
             self.right_clicked.emit()
+            event.accept()
+            return
+        elif event.button() == Qt.MouseButton.MiddleButton:
+            new_mode = DisplayMode.MONITOR if self._display_mode == DisplayMode.POMODORO else DisplayMode.POMODORO
+            self.set_display_mode(new_mode)
             event.accept()
             return
         super().mousePressEvent(event)
@@ -202,15 +241,23 @@ class FloatingBall(QWidget):
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):
-        """双击切换 开始/暂停（仅番茄钟模式）."""
-        if self._display_mode == DisplayMode.MONITOR:
+        """双击：番茄钟模式切换计时，监控模式切换子视图."""
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mouseDoubleClickEvent(event)
             return
-        if event.button() == Qt.MouseButton.LeftButton:
-            if self._is_inside_ball(event.position().toPoint()):
-                self._timer.toggle()
-                event.accept()
-                return
-        super().mouseDoubleClickEvent(event)
+        if not self._is_inside_ball(event.position().toPoint()):
+            super().mouseDoubleClickEvent(event)
+            return
+
+        if self._display_mode == DisplayMode.MONITOR:
+            self._monitor_sub = "network" if self._monitor_sub == "metrics" else "metrics"
+            self.update()
+            event.accept()
+            return
+        else:
+            self._timer.toggle()
+            event.accept()
+            return
 
     def wheelEvent(self, event: QWheelEvent):
         if not self._is_inside_ball(event.position().toPoint()):
@@ -360,24 +407,30 @@ class FloatingBall(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(ball_rect)
 
+        # ── 顶部光点 ──
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(255, 255, 255, 25)))
+        painter.drawEllipse(QPointF(cx - r * 0.3, cy - r * 0.35), 3, 3)
+
+        if self._monitor_sub == "metrics":
+            self._paint_monitor_metrics(painter, g, d, cx, cy, r, neon, bg, ball_rect)
+        else:
+            self._paint_monitor_network(painter, cx, cy, r, neon)
+
+    def _paint_monitor_metrics(self, painter, g, d, cx, cy, r, neon, bg, ball_rect):
+        """监控子视图：CPU 弧线 + 内存水位线."""
+
         # ── 内存水位线 ──
         mem_pct = self._anim_mem / 100.0
         if mem_pct > 0:
-            # 裁剪到圆形区域
             painter.save()
-            clip_path = painter.clipPath()
-            ball_path = clip_path if False else None
-            painter.setClipRect(ball_rect.toRect())
-            # 用椭圆作为裁剪路径会更精确
             ball_clip = QPainterPath()
             ball_clip.addEllipse(ball_rect)
             painter.setClipPath(ball_clip)
 
-            # 水位区域：从底部向上
             water_top = cy + r - (2 * r * mem_pct)
             water_rect = QRectF(g, water_top, d, cy + r - water_top + g)
 
-            # 水位渐变（底部深 → 表面亮）
             water_grad = QLinearGradient(0, cy + r, 0, water_top)
             water_grad.setColorAt(0.0, QColor(neon.red(), neon.green(), neon.blue(), 60))
             water_grad.setColorAt(0.3, QColor(neon.red(), neon.green(), neon.blue(), 100))
@@ -386,11 +439,6 @@ class FloatingBall(QWidget):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(water_grad))
             painter.drawRect(water_rect)
-
-            # 水面辉光线
-            painter.setPen(QPen(neon, 2))
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawLine(QPointF(g + 8, water_top), QPointF(g + d - 8, water_top))
 
             painter.restore()
 
@@ -428,38 +476,112 @@ class FloatingBall(QWidget):
         painter.drawArc(arc_rect, 90 * 16, -span)
 
         # ── CPU / MEM 文字 ──
-        label_font = QFont(self._fonts.state.family, 12)
+        label_font = QFont(self._fonts.state.family, 14)
         label_font.setBold(True)
         painter.setFont(label_font)
 
-        # CPU（上半）
         cpu_text = f"CPU {int(self._anim_cpu)}%"
         painter.setPen(QColor(255, 255, 255, 240))
-        cpu_rect = QRectF(cx - 44, cy - 16, 88, 18)
+        cpu_rect = QRectF(cx - 50, cy - 26, 100, 22)
         painter.drawText(cpu_rect, Qt.AlignmentFlag.AlignCenter, cpu_text)
 
-        # MEM（下半）
         mem_text = f"MEM {int(self._anim_mem)}%"
         painter.setPen(QColor(255, 255, 255, 240))
-        mem_rect = QRectF(cx - 44, cy + 2, 88, 18)
+        mem_rect = QRectF(cx - 50, cy + 6, 100, 22)
         painter.drawText(mem_rect, Qt.AlignmentFlag.AlignCenter, mem_text)
 
-        # ── 网速文字（左右分列） ──
-        net_font = QFont(self._fonts.state.family, 11)
-        painter.setFont(net_font)
-        painter.setPen(QColor(255, 255, 255, 200))
-        net_y = cy - r * 0.55
+        # ── 双击切换提示 ──
+        hint_font = QFont(self._fonts.state.family, 7)
+        painter.setFont(hint_font)
+        painter.setPen(QColor(neon.red(), neon.green(), neon.blue(), 80))
+        hint_rect = QRectF(cx - 40, cy + r * 0.65, 80, 12)
+        painter.drawText(hint_rect, Qt.AlignmentFlag.AlignCenter, "双击查看网速")
 
-        up_text = f"↑ {_format_speed(self._target_net_sent)}"
-        down_text = f"↓ {_format_speed(self._target_net_recv)}"
+    def _paint_monitor_network(self, painter, cx, cy, r, neon):
+        """监控子视图：网速 — 上传弧线 + 下载水位线."""
 
-        painter.drawText(QRectF(g + 6, net_y, r - 10, 14), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, up_text)
-        painter.drawText(QRectF(cx + 10, net_y, r - 10, 14), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, down_text)
+        ball_rect = QRectF(cx - r, cy - r, r * 2, r * 2)
+        g = self._glow
+        d = self._ball_diameter
 
-        # ── 顶部光点 ──
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(255, 255, 255, 25)))
-        painter.drawEllipse(QPointF(cx - r * 0.3, cy - r * 0.35), 3, 3)
+        # ── 下载水位线 ──
+        recv_ceil = max(self._net_recv_ceiling, 1.0)
+        recv_pct = min(self._target_net_recv / recv_ceil, 1.0)
+        if recv_pct > 0.01:
+            painter.save()
+            ball_clip = QPainterPath()
+            ball_clip.addEllipse(ball_rect)
+            painter.setClipPath(ball_clip)
+
+            water_top = cy + r - (2 * r * recv_pct)
+            water_rect = QRectF(ball_rect.left(), water_top, r * 2, cy + r - water_top + ball_rect.top())
+
+            water_grad = QLinearGradient(0, cy + r, 0, water_top)
+            water_grad.setColorAt(0.0, QColor(neon.red(), neon.green(), neon.blue(), 60))
+            water_grad.setColorAt(0.3, QColor(neon.red(), neon.green(), neon.blue(), 100))
+            water_grad.setColorAt(0.9, QColor(neon.red(), neon.green(), neon.blue(), 160))
+            water_grad.setColorAt(1.0, QColor(neon.red(), neon.green(), neon.blue(), 220))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(water_grad))
+            painter.drawRect(water_rect)
+
+            painter.restore()
+
+        # ── 内圈刻度线 ──
+        painter.setPen(QPen(QColor(neon.red(), neon.green(), neon.blue(), 25), 1))
+        for i in range(12):
+            angle = math.radians(i * 30 - 90)
+            inner_r = r - 10
+            outer_r = r - 5
+            x1 = cx + inner_r * math.cos(angle)
+            y1 = cy + inner_r * math.sin(angle)
+            x2 = cx + outer_r * math.cos(angle)
+            y2 = cy + outer_r * math.sin(angle)
+            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+        # ── 上传进度弧线 ──
+        sent_ceil = max(self._net_sent_ceiling, 1.0)
+        sent_pct = min(self._target_net_sent / sent_ceil, 1.0)
+        arc_margin = 6
+        arc_rect = QRectF(g + arc_margin, g + arc_margin,
+                          d - arc_margin * 2, d - arc_margin * 2)
+        span = int(sent_pct * 360 * 16)
+
+        for layer in range(3):
+            glow_alpha = [18, 35, 55][layer]
+            glow_w = [8, 5, 3][layer]
+            pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), glow_alpha), glow_w)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawArc(arc_rect, 90 * 16, -span)
+
+        pen = QPen(neon, 2.5)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.drawArc(arc_rect, 90 * 16, -span)
+
+        # ── 上传 / 下载文字 ──
+        label_font = QFont(self._fonts.state.family, 11)
+        label_font.setBold(True)
+        painter.setFont(label_font)
+
+        up_text = f"▲ {_format_speed(self._target_net_sent)}"
+        painter.setPen(QColor(255, 255, 255, 240))
+        up_rect = QRectF(cx - 55, cy - 18, 110, 18)
+        painter.drawText(up_rect, Qt.AlignmentFlag.AlignCenter, up_text)
+
+        down_text = f"▼ {_format_speed(self._target_net_recv)}"
+        painter.setPen(QColor(255, 255, 255, 240))
+        down_rect = QRectF(cx - 55, cy + 2, 110, 18)
+        painter.drawText(down_rect, Qt.AlignmentFlag.AlignCenter, down_text)
+
+        # ── 双击切换提示 ──
+        hint_font = QFont(self._fonts.state.family, 7)
+        painter.setFont(hint_font)
+        painter.setPen(QColor(neon.red(), neon.green(), neon.blue(), 80))
+        hint_rect = QRectF(cx - 40, cy + r * 0.65, 80, 12)
+        painter.drawText(hint_rect, Qt.AlignmentFlag.AlignCenter, "双击查看指标")
 
     # ── 回调 ──────────────────────────────────────────
 
@@ -501,10 +623,25 @@ class FloatingBall(QWidget):
         self._target_net_sent = snapshot.net_sent_bps
         self._target_net_recv = snapshot.net_recv_bps
 
+        # 动态上限：快速上升
+        if snapshot.net_sent_bps > self._net_sent_ceiling:
+            self._net_sent_ceiling = snapshot.net_sent_bps
+        if snapshot.net_recv_bps > self._net_recv_ceiling:
+            self._net_recv_ceiling = snapshot.net_recv_bps
+
     def _on_anim_tick(self):
         s = ANIM_SMOOTHING
         self._anim_cpu += (self._target_cpu - self._anim_cpu) * s
         self._anim_mem += (self._target_mem - self._anim_mem) * s
+
+        # 动态上限：缓慢回落（0.5%/帧 ≈ 15%/秒），下限 1 KB/s
+        decay = 0.995
+        min_ceil = 1024.0
+        if self._target_net_sent < self._net_sent_ceiling * 0.5:
+            self._net_sent_ceiling = max(self._net_sent_ceiling * decay, min_ceil)
+        if self._target_net_recv < self._net_recv_ceiling * 0.5:
+            self._net_recv_ceiling = max(self._net_recv_ceiling * decay, min_ceil)
+
         self.update()
 
     def _on_flash_finished(self):

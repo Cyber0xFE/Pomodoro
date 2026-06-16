@@ -18,7 +18,6 @@ class DisplayMode(Enum):
 
 # 悬浮球默认尺寸（像素）
 BALL_SIZE = 120
-MONITOR_BALL_SIZE = 150
 
 # 默认设置值
 DEFAULT_SETTINGS = {
