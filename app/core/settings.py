@@ -103,3 +103,19 @@ class SettingsManager(QObject):
     @sound_volume.setter
     def sound_volume(self, value: float):
         self.set("sound_volume", value)
+
+    @property
+    def hotkey(self) -> str:
+        return self.get("hotkey")
+
+    @hotkey.setter
+    def hotkey(self, value: str):
+        self.set("hotkey", value)
+
+    @property
+    def hotkey_enabled(self) -> bool:
+        return self.get("hotkey_enabled")
+
+    @hotkey_enabled.setter
+    def hotkey_enabled(self, value: bool):
+        self.set("hotkey_enabled", value)

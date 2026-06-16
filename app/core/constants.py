@@ -29,6 +29,8 @@ DEFAULT_SETTINGS = {
     "sound_enabled": True,
     "sound_volume": 0.8,
     "always_on_top": True,
+    "hotkey": "Ctrl+Shift+F11",
+    "hotkey_enabled": True,
 }
 
 # 预设时长选项（分钟）

@@ -1,5 +1,6 @@
 """悬浮球主窗口组件 — 赛博科技风格."""
 
+import ctypes
 import math
 import winsound
 
@@ -18,6 +19,7 @@ from app.core.timer import PomodoroTimer
 from app.core.settings import SettingsManager
 from app.core.monitor import PerformanceMonitor, MonitorSnapshot
 from app.themes.theme_manager import ThemeManager, Theme
+from app.utils.hotkey import MSG, WM_HOTKEY
 
 
 def _format_time(total_seconds: int) -> str:
@@ -38,6 +40,7 @@ class FloatingBall(QWidget):
     """番茄钟悬浮球 — 赛博科技 HUD 风格."""
 
     right_clicked = Signal()
+    hotkey_pressed = Signal()
 
     def __init__(
         self,
@@ -222,10 +225,24 @@ class FloatingBall(QWidget):
         self._sub_flipping = False
 
     def closeEvent(self, event):
-        """退出时保存窗口位置."""
+        """关闭时保存位置并隐藏到系统托盘."""
         self._settings.window_x = self.x()
         self._settings.window_y = self.y()
-        super().closeEvent(event)
+        self.hide()
+        event.ignore()
+
+    def nativeEvent(self, event_type: bytes, message_ptr: int) -> tuple[bool, int]:
+        """捕获 WM_HOTKEY 全局热键消息."""
+        try:
+            # PySide6 的 message_ptr 是包装类型，需先 int() 转整数再交给 ctypes
+            ptr = ctypes.c_void_p(int(message_ptr))
+            msg = ctypes.cast(ptr, ctypes.POINTER(MSG)).contents
+            if msg.message == WM_HOTKEY:
+                self.hotkey_pressed.emit()
+                return True, 0
+        except Exception:
+            pass
+        return super().nativeEvent(event_type, message_ptr)
 
     # ── 圆形命中测试 ──────────────────────────────────
 
