@@ -88,6 +88,8 @@ class FloatingBall(QWidget):
         # 监控动画插值
         self._anim_cpu = 0.0
         self._anim_mem = 0.0
+        self._anim_net_sent = 0.0
+        self._anim_net_recv = 0.0
 
         # 动画定时器
         self._anim_timer = QTimer(self)
@@ -600,7 +602,7 @@ class FloatingBall(QWidget):
 
         # ── 下载水位线 ──
         recv_ceil = max(self._net_recv_ceiling, 1.0)
-        recv_pct = min(self._target_net_recv / recv_ceil, 1.0)
+        recv_pct = min(self._anim_net_recv / recv_ceil, 1.0)
         if recv_pct > 0.01:
             painter.save()
             ball_clip = QPainterPath()
@@ -635,7 +637,7 @@ class FloatingBall(QWidget):
 
         # ── 上传进度弧线 ──
         sent_ceil = max(self._net_sent_ceiling, 1.0)
-        sent_pct = min(self._target_net_sent / sent_ceil, 1.0)
+        sent_pct = min(self._anim_net_sent / sent_ceil, 1.0)
         arc_margin = 6
         arc_rect = QRectF(g + arc_margin, g + arc_margin,
                           d - arc_margin * 2, d - arc_margin * 2)
@@ -660,12 +662,12 @@ class FloatingBall(QWidget):
         label_font.setBold(True)
         painter.setFont(label_font)
 
-        up_text = f"▲ {_format_speed(self._target_net_sent)}"
+        up_text = f"▲ {_format_speed(self._anim_net_sent)}"
         painter.setPen(QColor(255, 255, 255, 240))
         up_rect = QRectF(cx - 55, cy - 18, 110, 18)
         painter.drawText(up_rect, Qt.AlignmentFlag.AlignCenter, up_text)
 
-        down_text = f"▼ {_format_speed(self._target_net_recv)}"
+        down_text = f"▼ {_format_speed(self._anim_net_recv)}"
         painter.setPen(QColor(255, 255, 255, 240))
         down_rect = QRectF(cx - 55, cy + 2, 110, 18)
         painter.drawText(down_rect, Qt.AlignmentFlag.AlignCenter, down_text)
@@ -727,6 +729,8 @@ class FloatingBall(QWidget):
         s = ANIM_SMOOTHING
         self._anim_cpu += (self._target_cpu - self._anim_cpu) * s
         self._anim_mem += (self._target_mem - self._anim_mem) * s
+        self._anim_net_sent += (self._target_net_sent - self._anim_net_sent) * s
+        self._anim_net_recv += (self._target_net_recv - self._anim_net_recv) * s
 
         # 动态上限：缓慢回落（0.5%/帧 ≈ 15%/秒），下限 1 KB/s
         decay = 0.995
