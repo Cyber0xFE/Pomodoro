@@ -90,6 +90,9 @@ class FloatingBall(QWidget):
         self._anim_mem = 0.0
         self._anim_net_sent = 0.0
         self._anim_net_recv = 0.0
+        # 雪佛龙流光相位（随网速推进）
+        self._chev_phase_up = 0.0
+        self._chev_phase_down = 0.0
 
         # 动画定时器
         self._anim_timer = QTimer(self)
@@ -174,6 +177,8 @@ class FloatingBall(QWidget):
             self._anim_mem = 0.0
             self._target_net_sent = 0.0
             self._target_net_recv = 0.0
+            self._chev_phase_up = 0.0
+            self._chev_phase_down = 0.0
             self._monitor.start()
             self._anim_timer.start()
         else:
@@ -670,22 +675,27 @@ class FloatingBall(QWidget):
         painter.setPen(pen)
         painter.drawArc(arc_rect, 90 * 16, -span)
 
-        # ── 上下层背景图案：叠加雪佛龙(chevron)指示上传(上)/下载(下) ──
+        # ── 上下层背景图案：叠加雪佛龙(chevron)指示上传(上)/下载(下)，流速驱动流光 ──
         cw, ch = r * 0.32, r * 0.16      # 雪佛龙半宽 / 高度
         widths = (1.5, 2.5, 4.0)         # 由细到粗
-        alphas = (80, 120, 160)
-        # 上传：上半三道朝上雪佛龙
+        n = 3
+        base_a, amp_a = 105, 90          # 透明度基线 / 流光幅度
+        # 上传：上半三道朝上雪佛龙，亮峰向上游动
         for i, yb in enumerate((cy - r * 0.62, cy - r * 0.50, cy - r * 0.38)):
-            pen = QPen(QColor(255, 255, 255, alphas[i]), widths[i])
+            a = int(max(0, min(255, base_a + amp_a * math.sin(
+                2 * math.pi * self._chev_phase_up + i * 2 * math.pi / n))))
+            pen = QPen(QColor(255, 255, 255, a), widths[i])
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
             painter.drawPolyline(QPolygonF([
                 QPointF(cx - cw, yb), QPointF(cx, yb - ch), QPointF(cx + cw, yb),
             ]))
-        # 下载：下半三道朝下雪佛龙
+        # 下载：下半三道朝下雪佛龙，亮峰向下游动
         for i, yb in enumerate((cy + r * 0.38, cy + r * 0.50, cy + r * 0.62)):
-            pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alphas[i]), widths[i])
+            a = int(max(0, min(255, base_a + amp_a * math.sin(
+                2 * math.pi * self._chev_phase_down - i * 2 * math.pi / n))))
+            pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), a), widths[i])
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
@@ -771,6 +781,13 @@ class FloatingBall(QWidget):
         self._anim_mem += (self._target_mem - self._anim_mem) * s
         self._anim_net_sent += (self._target_net_sent - self._anim_net_sent) * s
         self._anim_net_recv += (self._target_net_recv - self._anim_net_recv) * s
+
+        # 雪佛龙流光：相位随当前网速推进（0.2~2.0 周/秒），越快越快
+        dt = ANIM_FRAME_MS / 1000.0
+        sent_pct = min(self._anim_net_sent / max(self._net_sent_ceiling, 1.0), 1.0)
+        recv_pct = min(self._anim_net_recv / max(self._net_recv_ceiling, 1.0), 1.0)
+        self._chev_phase_up = (self._chev_phase_up + (0.2 + 1.8 * sent_pct) * dt) % 1.0
+        self._chev_phase_down = (self._chev_phase_down + (0.2 + 1.8 * recv_pct) * dt) % 1.0
 
         # 动态上限：缓慢回落（0.5%/帧 ≈ 15%/秒），下限 1 KB/s
         decay = 0.995
