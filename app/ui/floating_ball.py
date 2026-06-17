@@ -6,7 +6,7 @@ import winsound
 
 from PySide6.QtCore import QEasingCurve, Property, QPropertyAnimation, QPointF, Qt, QPoint, QRectF, QTimer, Signal
 from PySide6.QtGui import (
-    QBrush, QColor, QFont, QMouseEvent, QPainter,
+    QBrush, QColor, QFont, QFontMetrics, QMouseEvent, QPainter,
     QPainterPath, QPen, QRadialGradient, QTransform, QWheelEvent, QLinearGradient,
 )
 from PySide6.QtWidgets import QApplication, QWidget
@@ -30,10 +30,10 @@ def _format_time(total_seconds: int) -> str:
 
 def _format_speed(bps: float) -> str:
     if bps >= 1_000_000:
-        return f"{bps / 1_000_000:.1f} MB/s"
+        return f"{bps / 1_000_000:.1f}M/s"
     elif bps >= 1_000:
-        return f"{bps / 1_000:.1f} KB/s"
-    return f"{bps:.0f} B/s"
+        return f"{bps / 1_000:.1f}K/s"
+    return f"{bps:.0f}B/s"
 
 
 class FloatingBall(QWidget):
@@ -593,6 +593,19 @@ class FloatingBall(QWidget):
         hint_rect = QRectF(cx - 40, cy + r * 0.65, 80, 12)
         painter.drawText(hint_rect, Qt.AlignmentFlag.AlignCenter, "双击查看网速")
 
+    def _fit_font(self, family: str, size: int, text: str, max_width: int) -> QFont:
+        """返回加粗字体，必要时逐号缩小使 text 宽度不超过 max_width（下限 7）。"""
+        s = size
+        while s > 7:
+            f = QFont(family, s)
+            f.setBold(True)
+            if QFontMetrics(f).horizontalAdvance(text) <= max_width:
+                return f
+            s -= 1
+        f = QFont(family, max(s, 7))
+        f.setBold(True)
+        return f
+
     def _paint_monitor_network(self, painter, cx, cy, r, neon):
         """监控子视图：网速 — 上传弧线 + 下载水位线."""
 
@@ -658,18 +671,22 @@ class FloatingBall(QWidget):
         painter.drawArc(arc_rect, 90 * 16, -span)
 
         # ── 上传 / 下载文字 ──
-        label_font = QFont(self._fonts.state.family, 11)
-        label_font.setBold(True)
-        painter.setFont(label_font)
+        # 行中心偏离圆心 ±10px，圆在该处变窄，按可用宽度自动缩放字号防止溢出球外
+        row_half_w = math.sqrt(max(r * r - 12 * 12, 1.0))
+        avail_w = int(row_half_w * 2 - 8)
 
         up_text = f"▲ {_format_speed(self._anim_net_sent)}"
+        up_font = self._fit_font(self._fonts.state.family, 14, up_text, avail_w)
+        painter.setFont(up_font)
         painter.setPen(QColor(255, 255, 255, 240))
-        up_rect = QRectF(cx - 55, cy - 18, 110, 18)
+        up_rect = QRectF(cx - row_half_w, cy - 20, row_half_w * 2, 20)
         painter.drawText(up_rect, Qt.AlignmentFlag.AlignCenter, up_text)
 
         down_text = f"▼ {_format_speed(self._anim_net_recv)}"
+        down_font = self._fit_font(self._fonts.state.family, 14, down_text, avail_w)
+        painter.setFont(down_font)
         painter.setPen(QColor(255, 255, 255, 240))
-        down_rect = QRectF(cx - 55, cy + 2, 110, 18)
+        down_rect = QRectF(cx - row_half_w, cy, row_half_w * 2, 20)
         painter.drawText(down_rect, Qt.AlignmentFlag.AlignCenter, down_text)
 
         # ── 双击切换提示 ──
