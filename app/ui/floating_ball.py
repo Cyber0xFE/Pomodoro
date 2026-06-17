@@ -7,7 +7,7 @@ import winsound
 from PySide6.QtCore import QEasingCurve, Property, QPropertyAnimation, QPointF, Qt, QPoint, QRectF, QTimer, Signal
 from PySide6.QtGui import (
     QBrush, QColor, QFont, QFontMetrics, QMouseEvent, QPainter,
-    QPainterPath, QPen, QRadialGradient, QTransform, QWheelEvent, QLinearGradient,
+    QPainterPath, QPen, QPolygonF, QRadialGradient, QTransform, QWheelEvent, QLinearGradient,
 )
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -30,10 +30,10 @@ def _format_time(total_seconds: int) -> str:
 
 def _format_speed(bps: float) -> str:
     if bps >= 1_000_000:
-        return f"{bps / 1_000_000:.1f}M/s"
+        return f"{bps / 1_000_000:.1f} M/s"
     elif bps >= 1_000:
-        return f"{bps / 1_000:.1f}K/s"
-    return f"{bps:.0f}B/s"
+        return f"{bps / 1_000:.1f} K/s"
+    return f"{bps:.0f} B/s"
 
 
 class FloatingBall(QWidget):
@@ -606,6 +606,17 @@ class FloatingBall(QWidget):
         f.setBold(True)
         return f
 
+    def _draw_arrow(self, painter, x, cy, w, h, color, up: bool) -> None:
+        """在 (x, cy) 处绘制宽 w 高 h 的实心小三角，up=True 朝上、False 朝下。"""
+        poly = QPolygonF([
+            QPointF(x, cy + (h / 2 if up else -h / 2)),
+            QPointF(x + w, cy + (h / 2 if up else -h / 2)),
+            QPointF(x + w / 2, cy + (-h / 2 if up else h / 2)),
+        ])
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(color))
+        painter.drawPolygon(poly)
+
     def _paint_monitor_network(self, painter, cx, cy, r, neon):
         """监控子视图：网速 — 上传弧线 + 下载水位线."""
 
@@ -671,23 +682,32 @@ class FloatingBall(QWidget):
         painter.drawArc(arc_rect, 90 * 16, -span)
 
         # ── 上传 / 下载文字 ──
-        # 行中心偏离圆心 ±10px，圆在该处变窄，按可用宽度自动缩放字号防止溢出球外
+        # 行中心偏离圆心 ±10px，圆在该处变窄；左侧自绘小三角指示方向，文字按可用宽度自动缩放
         row_half_w = math.sqrt(max(r * r - 12 * 12, 1.0))
-        avail_w = int(row_half_w * 2 - 8)
+        tri_w, tri_h, tri_gap = 8, 8, 4
+        avail_w = int(row_half_w * 2 - tri_w - tri_gap - 8)
 
-        up_text = f"▲ {_format_speed(self._anim_net_sent)}"
+        up_text = _format_speed(self._anim_net_sent)
         up_font = self._fit_font(self._fonts.state.family, 14, up_text, avail_w)
+        up_text_w = QFontMetrics(up_font).horizontalAdvance(up_text)
+        up_start = cx - (tri_w + tri_gap + up_text_w) / 2
+        up_cy = cy - 10
+        self._draw_arrow(painter, up_start, up_cy, tri_w, tri_h, neon, up=True)
         painter.setFont(up_font)
         painter.setPen(QColor(255, 255, 255, 240))
-        up_rect = QRectF(cx - row_half_w, cy - 20, row_half_w * 2, 20)
-        painter.drawText(up_rect, Qt.AlignmentFlag.AlignCenter, up_text)
+        painter.drawText(QRectF(up_start + tri_w + tri_gap, up_cy - 10, up_text_w, 20),
+                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, up_text)
 
-        down_text = f"▼ {_format_speed(self._anim_net_recv)}"
+        down_text = _format_speed(self._anim_net_recv)
         down_font = self._fit_font(self._fonts.state.family, 14, down_text, avail_w)
+        down_text_w = QFontMetrics(down_font).horizontalAdvance(down_text)
+        down_start = cx - (tri_w + tri_gap + down_text_w) / 2
+        down_cy = cy + 10
+        self._draw_arrow(painter, down_start, down_cy, tri_w, tri_h, QColor(255, 255, 255, 220), up=False)
         painter.setFont(down_font)
         painter.setPen(QColor(255, 255, 255, 240))
-        down_rect = QRectF(cx - row_half_w, cy, row_half_w * 2, 20)
-        painter.drawText(down_rect, Qt.AlignmentFlag.AlignCenter, down_text)
+        painter.drawText(QRectF(down_start + tri_w + tri_gap, down_cy - 10, down_text_w, 20),
+                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, down_text)
 
         # ── 双击切换提示 ──
         hint_font = QFont(self._fonts.state.family, 7)
