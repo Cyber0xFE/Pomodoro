@@ -30,9 +30,9 @@ def _format_time(total_seconds: int) -> str:
 
 def _format_speed(bps: float) -> str:
     if bps >= 1_000_000:
-        return f"{bps / 1_000_000:.1f} M/s"
+        return f"{bps / 1_000_000:.1f} MB/s"
     elif bps >= 1_000:
-        return f"{bps / 1_000:.1f} K/s"
+        return f"{bps / 1_000:.1f} KB/s"
     return f"{bps:.0f} B/s"
 
 
@@ -606,17 +606,6 @@ class FloatingBall(QWidget):
         f.setBold(True)
         return f
 
-    def _draw_arrow(self, painter, x, cy, w, h, color, up: bool) -> None:
-        """在 (x, cy) 处绘制宽 w 高 h 的实心小三角，up=True 朝上、False 朝下。"""
-        poly = QPolygonF([
-            QPointF(x, cy + (h / 2 if up else -h / 2)),
-            QPointF(x + w, cy + (h / 2 if up else -h / 2)),
-            QPointF(x + w / 2, cy + (-h / 2 if up else h / 2)),
-        ])
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(color))
-        painter.drawPolygon(poly)
-
     def _paint_monitor_network(self, painter, cx, cy, r, neon):
         """监控子视图：网速 — 上传弧线 + 下载水位线."""
 
@@ -681,33 +670,47 @@ class FloatingBall(QWidget):
         painter.setPen(pen)
         painter.drawArc(arc_rect, 90 * 16, -span)
 
+        # ── 上下层背景图案：叠加雪佛龙(chevron)指示上传(上)/下载(下) ──
+        cw, ch = r * 0.32, r * 0.16      # 雪佛龙半宽 / 高度
+        widths = (1.5, 2.5, 4.0)         # 由细到粗
+        alphas = (80, 120, 160)
+        # 上传：上半三道朝上雪佛龙
+        for i, yb in enumerate((cy - r * 0.62, cy - r * 0.50, cy - r * 0.38)):
+            pen = QPen(QColor(255, 255, 255, alphas[i]), widths[i])
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.drawPolyline(QPolygonF([
+                QPointF(cx - cw, yb), QPointF(cx, yb - ch), QPointF(cx + cw, yb),
+            ]))
+        # 下载：下半三道朝下雪佛龙
+        for i, yb in enumerate((cy + r * 0.38, cy + r * 0.50, cy + r * 0.62)):
+            pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alphas[i]), widths[i])
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.drawPolyline(QPolygonF([
+                QPointF(cx - cw, yb), QPointF(cx, yb + ch), QPointF(cx + cw, yb),
+            ]))
+
         # ── 上传 / 下载文字 ──
-        # 行中心偏离圆心 ±10px，圆在该处变窄；左侧自绘小三角指示方向，文字按可用宽度自动缩放
+        # 行中心偏离圆心 ±10px，圆在该处变窄，按可用宽度自动缩放字号防止溢出球外
         row_half_w = math.sqrt(max(r * r - 12 * 12, 1.0))
-        tri_w, tri_h, tri_gap = 8, 8, 4
-        avail_w = int(row_half_w * 2 - tri_w - tri_gap - 8)
+        avail_w = int(row_half_w * 2 - 8)
 
         up_text = _format_speed(self._anim_net_sent)
         up_font = self._fit_font(self._fonts.state.family, 14, up_text, avail_w)
-        up_text_w = QFontMetrics(up_font).horizontalAdvance(up_text)
-        up_start = cx - (tri_w + tri_gap + up_text_w) / 2
-        up_cy = cy - 10
-        self._draw_arrow(painter, up_start, up_cy, tri_w, tri_h, neon, up=True)
         painter.setFont(up_font)
-        painter.setPen(QColor(255, 255, 255, 240))
-        painter.drawText(QRectF(up_start + tri_w + tri_gap, up_cy - 10, up_text_w, 20),
-                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, up_text)
+        painter.setPen(QColor(255, 255, 255, 245))
+        painter.drawText(QRectF(cx - row_half_w, cy - 20, row_half_w * 2, 20),
+                         Qt.AlignmentFlag.AlignCenter, up_text)
 
         down_text = _format_speed(self._anim_net_recv)
         down_font = self._fit_font(self._fonts.state.family, 14, down_text, avail_w)
-        down_text_w = QFontMetrics(down_font).horizontalAdvance(down_text)
-        down_start = cx - (tri_w + tri_gap + down_text_w) / 2
-        down_cy = cy + 10
-        self._draw_arrow(painter, down_start, down_cy, tri_w, tri_h, QColor(255, 255, 255, 220), up=False)
         painter.setFont(down_font)
-        painter.setPen(QColor(255, 255, 255, 240))
-        painter.drawText(QRectF(down_start + tri_w + tri_gap, down_cy - 10, down_text_w, 20),
-                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, down_text)
+        painter.setPen(QColor(255, 255, 255, 245))
+        painter.drawText(QRectF(cx - row_half_w, cy, row_half_w * 2, 20),
+                         Qt.AlignmentFlag.AlignCenter, down_text)
 
         # ── 双击切换提示 ──
         hint_font = QFont(self._fonts.state.family, 7)
