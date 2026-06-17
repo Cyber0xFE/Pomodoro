@@ -93,6 +93,8 @@ class FloatingBall(QWidget):
         # 雪佛龙流光相位（随网速推进）
         self._chev_phase_up = 0.0
         self._chev_phase_down = 0.0
+        # 水位波纹相位（随 MEM 推进）
+        self._ripple_phase = 0.0
 
         # 动画定时器
         self._anim_timer = QTimer(self)
@@ -179,6 +181,7 @@ class FloatingBall(QWidget):
             self._target_net_recv = 0.0
             self._chev_phase_up = 0.0
             self._chev_phase_down = 0.0
+            self._ripple_phase = 0.0
             self._monitor.start()
             self._anim_timer.start()
         else:
@@ -530,7 +533,22 @@ class FloatingBall(QWidget):
             painter.setClipPath(ball_clip)
 
             water_top = cy + r - (2 * r * mem_pct)
-            water_rect = QRectF(g, water_top, d, cy + r - water_top + g)
+            ripple_amp = 4.0 * math.sqrt(max(mem_pct, 0.01))
+            wave_len = r * 2.5             # 波长
+            n_pts = 40                     # 采样点数
+            # 水面路径：上边为正弦波纹，下边到底部
+            left = g
+            right = g + d
+            bottom = cy + r + g + 10
+            wave_path = QPainterPath()
+            wave_path.moveTo(left, bottom)
+            wave_path.lineTo(right, bottom)
+            for i in range(n_pts, -1, -1):
+                px = left + (i / n_pts) * d
+                py = water_top + ripple_amp * math.sin(
+                    2 * math.pi * (self._ripple_phase + px / wave_len))
+                wave_path.lineTo(px, py)
+            wave_path.closeSubpath()
 
             water_grad = QLinearGradient(0, cy + r, 0, water_top)
             water_grad.setColorAt(0.0, QColor(neon.red(), neon.green(), neon.blue(), 60))
@@ -539,7 +557,7 @@ class FloatingBall(QWidget):
             water_grad.setColorAt(1.0, QColor(neon.red(), neon.green(), neon.blue(), 220))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(water_grad))
-            painter.drawRect(water_rect)
+            painter.drawPath(wave_path)
 
             painter.restore()
 
@@ -547,12 +565,10 @@ class FloatingBall(QWidget):
         painter.setPen(QPen(QColor(neon.red(), neon.green(), neon.blue(), 25), 1))
         for i in range(12):
             angle = math.radians(i * 30 - 90)
-            inner_r = r - 10
-            outer_r = r - 5
-            x1 = cx + inner_r * math.cos(angle)
-            y1 = cy + inner_r * math.sin(angle)
-            x2 = cx + outer_r * math.cos(angle)
-            y2 = cy + outer_r * math.sin(angle)
+            x1 = cx + (r - 10) * math.cos(angle)
+            y1 = cy + (r - 10) * math.sin(angle)
+            x2 = cx + (r - 5) * math.cos(angle)
+            y2 = cy + (r - 5) * math.sin(angle)
             painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
         # ── CPU 进度弧线 ──
@@ -788,6 +804,9 @@ class FloatingBall(QWidget):
         recv_pct = min(self._anim_net_recv / max(self._net_recv_ceiling, 1.0), 1.0)
         self._chev_phase_up = (self._chev_phase_up + (0.2 + 1.8 * sent_pct) * dt) % 1.0
         self._chev_phase_down = (self._chev_phase_down + (0.2 + 1.8 * recv_pct) * dt) % 1.0
+        # 水位波纹：相位随 MEM 推进（0.15~1.2 周/秒），越高越快
+        mem_pct = min(self._anim_mem / 100.0, 1.0)
+        self._ripple_phase = (self._ripple_phase + (0.15 + 1.05 * mem_pct) * dt) % 1.0
 
         # 动态上限：缓慢回落（0.5%/帧 ≈ 15%/秒），下限 1 KB/s
         decay = 0.995
