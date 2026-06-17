@@ -294,16 +294,16 @@ class FloatingBall(QWidget):
         ball_top = wy + g
         ball_bottom = wy + g + d
 
-        # 水平：球体边缘靠近屏幕边缘 → 藏到屏幕外，露尾巴
-        if abs(ball_left - geo.left()) < SNAP_THRESHOLD:
+        # 水平：球体左边缘到达/越过屏幕左边缘 → 藏到屏幕外，露尾巴
+        if ball_left < geo.left() + SNAP_THRESHOLD:
             target_x = geo.left() + tail - g - d   # 只露右端 tail px
-        elif abs(ball_right - geo.right()) < SNAP_THRESHOLD:
+        elif ball_right > geo.right() - SNAP_THRESHOLD:
             target_x = geo.right() - tail - g       # 只露左端 tail px
 
         # 垂直
-        if abs(ball_top - geo.top()) < SNAP_THRESHOLD:
+        if ball_top < geo.top() + SNAP_THRESHOLD:
             target_y = geo.top() + tail - g - d
-        elif abs(ball_bottom - geo.bottom()) < SNAP_THRESHOLD:
+        elif ball_bottom > geo.bottom() - SNAP_THRESHOLD:
             target_y = geo.bottom() - tail - g
 
         if target_x != wx or target_y != wy:
