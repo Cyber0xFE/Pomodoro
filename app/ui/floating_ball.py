@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 from app.core.constants import (
     BALL_SIZE, OPACITY_MIN, OPACITY_MAX, OPACITY_STEP,
     TimerState, DisplayMode, ANIM_FRAME_MS, ANIM_SMOOTHING,
+    SNAP_THRESHOLD, TAIL_WIDTH,
 )
 from app.core.timer import PomodoroTimer
 from app.core.settings import SettingsManager
@@ -269,6 +270,47 @@ class FloatingBall(QWidget):
         r = self._ball_diameter / 2.0
         return (dx * dx + dy * dy) <= (r * r)
 
+    # ── 屏幕边缘吸附 ──────────────────────────────
+
+    def _snap_to_edge(self):
+        """拖拽释放时若球体边缘靠近屏幕边缘，则将球体藏到屏幕外，仅留 TAIL_WIDTH px 尾巴。"""
+        ball_center = self.frameGeometry().center()
+        screen = QApplication.screenAt(ball_center)
+        if screen is None:
+            screen = QApplication.primaryScreen()
+
+        geo = screen.availableGeometry()
+        g = self._glow
+        d = self._ball_diameter
+        tail = TAIL_WIDTH
+
+        wx = self.x()
+        wy = self.y()
+        target_x, target_y = wx, wy
+
+        # 视觉球体的四条边
+        ball_left = wx + g
+        ball_right = wx + g + d
+        ball_top = wy + g
+        ball_bottom = wy + g + d
+
+        # 水平：球体边缘靠近屏幕边缘 → 藏到屏幕外，露尾巴
+        if abs(ball_left - geo.left()) < SNAP_THRESHOLD:
+            target_x = geo.left() + tail - g - d   # 只露右端 tail px
+        elif abs(ball_right - geo.right()) < SNAP_THRESHOLD:
+            target_x = geo.right() - tail - g       # 只露左端 tail px
+
+        # 垂直
+        if abs(ball_top - geo.top()) < SNAP_THRESHOLD:
+            target_y = geo.top() + tail - g - d
+        elif abs(ball_bottom - geo.bottom()) < SNAP_THRESHOLD:
+            target_y = geo.bottom() - tail - g
+
+        if target_x != wx or target_y != wy:
+            self.move(target_x, target_y)
+            self._settings.window_x = target_x
+            self._settings.window_y = target_y
+
     # ── 事件 ──────────────────────────────────────────
 
     def mousePressEvent(self, event: QMouseEvent):
@@ -277,6 +319,7 @@ class FloatingBall(QWidget):
             return
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
+            self._did_drag = False
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
         elif event.button() == Qt.MouseButton.RightButton:
@@ -292,7 +335,22 @@ class FloatingBall(QWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self._dragging and (event.buttons() & Qt.MouseButton.LeftButton):
-            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            self._did_drag = True
+            new_pos = event.globalPosition().toPoint() - self._drag_offset
+
+            # 底部边界：禁止球体掉到屏幕工作区下方
+            sc = QApplication.screenAt(self.frameGeometry().center())
+            if sc is None:
+                sc = QApplication.primaryScreen()
+            max_y = sc.availableGeometry().bottom() - self._glow - self._ball_diameter
+            if new_pos.y() > max_y:
+                if self.y() > max_y:
+                    # 已吸附在屏幕外 → 允许向上拖回，禁止继续向下
+                    new_pos.setY(min(new_pos.y(), self.y()))
+                else:
+                    new_pos.setY(max_y)
+
+            self.move(new_pos)
             event.accept()
             return
         # 光标反馈（用全局覆盖，无边框窗口的 setCursor 不生效）
@@ -309,14 +367,10 @@ class FloatingBall(QWidget):
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
-            if self._dragging:
-                delta = (event.globalPosition().toPoint()
-                         - self.frameGeometry().topLeft()
-                         - self._drag_offset)
-                # 拖动了才保存位置
-                if delta.manhattanLength() >= 10:
-                    self._settings.window_x = self.x()
-                    self._settings.window_y = self.y()
+            if self._dragging and self._did_drag:
+                self._snap_to_edge()
+                self._settings.window_x = self.x()
+                self._settings.window_y = self.y()
             self._dragging = False
             event.accept()
             return

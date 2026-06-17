@@ -46,3 +46,8 @@ OPACITY_STEP = 0.05
 # 性能监控动画参数
 ANIM_FRAME_MS = 33       # 动画帧间隔 ~30fps
 ANIM_SMOOTHING = 0.20     # EMA 平滑系数
+
+# 屏幕边缘吸附阈值（像素）
+SNAP_THRESHOLD = 30
+# 吸附后露出的"尾巴"宽度（像素）
+TAIL_WIDTH = 20
