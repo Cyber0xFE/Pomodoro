@@ -267,12 +267,37 @@ class FloatingBall(QWidget):
         return QPointF(g + r, g + r)
 
     def _is_inside_ball(self, local_pos: QPoint) -> bool:
-        """判断本地坐标是否在球体圆形范围内."""
+        """判断本地坐标是否在球体圆形范围内（吸附态改为条形命中检测）."""
+        if self._snapped_edge is not None:
+            return self._is_inside_bar(local_pos)
         center = self._ball_center()
         dx = local_pos.x() - center.x()
         dy = local_pos.y() - center.y()
         r = self._ball_diameter / 2.0
         return (dx * dx + dy * dy) <= (r * r)
+
+    def _is_inside_bar(self, local_pos: QPoint) -> bool:
+        """判断本地坐标是否在吸附条的条形区域内（含 5px 容差）."""
+        g = self._glow
+        d = self._ball_diameter
+        tail = TAIL_WIDTH
+        bw = BAR_WIDTH
+        pad = 5  # 点击容差
+
+        if self._snapped_edge in ('left', 'right'):
+            bar_center_x = (g + tail / 2) if self._snapped_edge == 'right' else (g + d - tail / 2)
+            bar_x = bar_center_x - bw / 2 - pad
+            bar_w = bw + pad * 2
+            bar_y = g + 8 - pad
+            bar_h = d - 16 + pad * 2
+        else:
+            bar_center_y = (g + tail / 2) if self._snapped_edge == 'bottom' else (g + d - tail / 2)
+            bar_y = bar_center_y - bw / 2 - pad
+            bar_h = bw + pad * 2
+            bar_x = g + 8 - pad
+            bar_w = d - 16 + pad * 2
+
+        return QRectF(bar_x, bar_y, bar_w, bar_h).contains(local_pos)
 
     # ── 屏幕边缘吸附 ──────────────────────────────
 
