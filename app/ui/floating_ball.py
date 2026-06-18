@@ -2,6 +2,7 @@
 
 import ctypes
 import math
+import time
 import winsound
 
 from PySide6.QtCore import QEasingCurve, Property, QPropertyAnimation, QPointF, Qt, QPoint, QRectF, QTimer, Signal
@@ -60,6 +61,8 @@ class FloatingBall(QWidget):
         self._dragging = False
         self._drag_offset = QPoint()
         self._snapped_edge = None  # 'left' | 'right' | 'top' | 'bottom' | None
+        self._snap_speed_text = ""
+        self._snap_speed_ts = 0.0
 
         self._ball_diameter = BALL_SIZE
         glow = 20
@@ -453,6 +456,50 @@ class FloatingBall(QWidget):
             painter.drawEllipse(QPointF(bar_rect.center().x(), bar_rect.top() + 3), 1.5, 1.5)
         else:
             painter.drawEllipse(QPointF(bar_rect.left() + 3, bar_rect.center().y()), 1.5, 1.5)
+
+        # ── 7. 网速文字（仅上下吸附时显示，1s 刷新）──
+        if not vertical and self._display_mode == DisplayMode.MONITOR:
+            def _short_speed(bps: float) -> str:
+                if bps >= 1_000_000:
+                    return f"{bps / 1_000_000:.1f}M"
+                elif bps >= 1_000:
+                    return f"{bps / 1_000:.0f}K"
+                return f"{bps:.0f}B"
+
+            now = time.monotonic()
+            if now - self._snap_speed_ts >= 1.0:
+                up_text = _short_speed(self._anim_net_sent)
+                dn_text = _short_speed(self._anim_net_recv)
+                self._snap_speed_text = f"▲ {up_text} ▼ {dn_text}"
+                self._snap_speed_ts = now
+
+            text = self._snap_speed_text
+
+            font = QFont(self._fonts.state.family, 11)
+            font.setBold(True)
+            painter.setFont(font)
+
+            fm = QFontMetrics(font)
+            text_h = fm.height()
+            text_y = bar_y - text_h - 5 if edge == 'bottom' else bar_y + bar_h + 5
+            text_rect = QRectF(bar_x - 4, text_y, bar_w + 8, text_h)
+
+            # 半透明深色背景
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(0, 0, 0, 170)))
+            painter.drawRoundedRect(text_rect.adjusted(-2, -2, 2, 2), 3, 3)
+
+            # 文字辉光
+            for i, alpha in enumerate([35, 20]):
+                tc = QColor(neon.red(), neon.green(), neon.blue(), alpha)
+                painter.setPen(tc)
+                off = i + 1
+                painter.drawText(text_rect.translated(off, 0), Qt.AlignmentFlag.AlignCenter, text)
+                painter.drawText(text_rect.translated(-off, 0), Qt.AlignmentFlag.AlignCenter, text)
+                painter.drawText(text_rect.translated(0, off), Qt.AlignmentFlag.AlignCenter, text)
+                painter.drawText(text_rect.translated(0, -off), Qt.AlignmentFlag.AlignCenter, text)
+            painter.setPen(QColor(255, 255, 255, 240))
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, text)
 
     # ── 事件 ──────────────────────────────────────────
 
