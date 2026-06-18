@@ -51,3 +51,5 @@ ANIM_SMOOTHING = 0.20     # EMA 平滑系数
 SNAP_THRESHOLD = 30
 # 吸附后露出的"尾巴"宽度（像素）
 TAIL_WIDTH = 20
+# 吸附条自身宽度（像素）
+BAR_WIDTH = 10

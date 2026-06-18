@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 from app.core.constants import (
     BALL_SIZE, OPACITY_MIN, OPACITY_MAX, OPACITY_STEP,
     TimerState, DisplayMode, ANIM_FRAME_MS, ANIM_SMOOTHING,
-    SNAP_THRESHOLD, TAIL_WIDTH,
+    SNAP_THRESHOLD, TAIL_WIDTH, BAR_WIDTH,
 )
 from app.core.timer import PomodoroTimer
 from app.core.settings import SettingsManager
@@ -59,6 +59,7 @@ class FloatingBall(QWidget):
 
         self._dragging = False
         self._drag_offset = QPoint()
+        self._snapped_edge = None  # 'left' | 'right' | 'top' | 'bottom' | None
 
         self._ball_diameter = BALL_SIZE
         glow = 20
@@ -287,6 +288,7 @@ class FloatingBall(QWidget):
         wx = self.x()
         wy = self.y()
         target_x, target_y = wx, wy
+        snapped = None
 
         # 视觉球体的四条边
         ball_left = wx + g
@@ -297,19 +299,156 @@ class FloatingBall(QWidget):
         # 水平：球体左边缘到达/越过屏幕左边缘 → 藏到屏幕外，露尾巴
         if ball_left < geo.left() + SNAP_THRESHOLD:
             target_x = geo.left() + tail - g - d   # 只露右端 tail px
+            snapped = 'left'
         elif ball_right > geo.right() - SNAP_THRESHOLD:
             target_x = geo.right() - tail - g       # 只露左端 tail px
+            snapped = 'right'
 
         # 垂直
         if ball_top < geo.top() + SNAP_THRESHOLD:
             target_y = geo.top() + tail - g - d
+            if snapped is None:
+                snapped = 'top'
         elif ball_bottom > geo.bottom() - SNAP_THRESHOLD:
             target_y = geo.bottom() - tail - g
+            if snapped is None:
+                snapped = 'bottom'
 
         if target_x != wx or target_y != wy:
             self.move(target_x, target_y)
             self._settings.window_x = target_x
             self._settings.window_y = target_y
+            self._snapped_edge = snapped
+            self.update()
+        else:
+            self._snapped_edge = None
+
+    # ── 吸附条进度指示 ───────────────────────────────
+
+    def _get_snap_progress(self) -> float:
+        """获取吸附条的进度值 (0.0~1.0)。"""
+        if self._display_mode == DisplayMode.MONITOR:
+            if self._monitor_sub == "metrics":
+                return self._anim_mem / 100.0
+            else:
+                return min(self._anim_net_recv / max(self._net_recv_ceiling, 1.0), 1.0)
+        else:
+            return self._timer.fraction_remaining
+
+    def _paint_snapped_bar(self, painter: QPainter):
+        """吸附态绘制 — 赛博 HUD 风格窄条进度指示器."""
+        g = self._glow
+        d = self._ball_diameter
+        tail = TAIL_WIDTH
+        bw = BAR_WIDTH
+        neon = QColor(self._neon)
+        bg = QColor(self._bg)
+        edge = self._snapped_edge
+
+        # ── 根据吸附边确定条形区域与方向（窄条居中于尾巴区域内）──
+        if edge in ('left', 'right'):
+            margin = 8
+            bar_center_x = (g + tail / 2) if edge == 'right' else (g + d - tail / 2)
+            bar_x = bar_center_x - bw / 2
+            bar_w = bw
+            bar_h = d - margin * 2
+            bar_y = g + margin
+            vertical = True
+        else:
+            margin = 8
+            bar_center_y = (g + tail / 2) if edge == 'bottom' else (g + d - tail / 2)
+            bar_y = bar_center_y - bw / 2
+            bar_h = bw
+            bar_w = d - margin * 2
+            bar_x = g + margin
+            vertical = False
+
+        bar_rect = QRectF(bar_x, bar_y, bar_w, bar_h)
+        progress = max(0.0, min(self._get_snap_progress(), 1.0))
+
+        # ── 1. 外层辉光（3 层，与球体一致）──
+        for i, alpha in enumerate([20, 38, 58]):
+            glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha),
+                            3 + i * 2)
+            glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(glow_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            adj = 1.5 + i * 1.5
+            painter.drawRoundedRect(bar_rect.adjusted(-adj, -adj, adj, adj), 5 + i, 5 + i)
+
+        # ── 2. 背景 ──
+        painter.setPen(Qt.PenStyle.NoPen)
+        if vertical:
+            bg_grad = QLinearGradient(0, bar_rect.top(), 0, bar_rect.bottom())
+        else:
+            bg_grad = QLinearGradient(bar_rect.left(), 0, bar_rect.right(), 0)
+        bg_grad.setColorAt(0.0, bg.lighter(125))
+        bg_grad.setColorAt(0.5, bg)
+        bg_grad.setColorAt(1.0, bg.darker(140))
+        painter.setBrush(QBrush(bg_grad))
+        painter.drawRoundedRect(bar_rect, 3, 3)
+
+        # ── 3. 刻度线 ──
+        n_ticks = 5
+        tick_color = QColor(neon.red(), neon.green(), neon.blue(), 35)
+        painter.setPen(QPen(tick_color, 0.6))
+        if vertical:
+            for i in range(1, n_ticks + 1):
+                ty = bar_y + bar_h * i / (n_ticks + 1)
+                painter.drawLine(QPointF(bar_x - 1.5, ty),
+                                 QPointF(bar_x + 2, ty))
+                painter.drawLine(QPointF(bar_x + bar_w - 2, ty),
+                                 QPointF(bar_x + bar_w + 1.5, ty))
+        else:
+            for i in range(1, n_ticks + 1):
+                tx = bar_x + bar_w * i / (n_ticks + 1)
+                painter.drawLine(QPointF(tx, bar_y - 1.5),
+                                 QPointF(tx, bar_y + 2))
+                painter.drawLine(QPointF(tx, bar_y + bar_h - 2),
+                                 QPointF(tx, bar_y + bar_h + 1.5))
+
+        # ── 4. 进度填充 ──
+        if progress > 0.001:
+            pad = 1.2
+            if vertical:
+                fill_h = max((bar_h - pad * 2) * progress, 2)
+                fill_rect = QRectF(bar_x + pad, bar_y + bar_h - pad - fill_h,
+                                   bar_w - pad * 2, fill_h)
+                fill_grad = QLinearGradient(0, bar_rect.bottom(), 0, bar_rect.top())
+            else:
+                fill_w = max((bar_w - pad * 2) * progress, 2)
+                fill_rect = QRectF(bar_x + pad, bar_y + pad,
+                                   fill_w, bar_h - pad * 2)
+                fill_grad = QLinearGradient(bar_rect.left(), 0, bar_rect.right(), 0)
+
+            fill_grad.setColorAt(0.0, QColor(neon.red(), neon.green(), neon.blue(), 180))
+            fill_grad.setColorAt(0.15, QColor(
+                min(neon.red() + 70, 255),
+                min(neon.green() + 70, 255),
+                min(neon.blue() + 70, 255), 245))
+            fill_grad.setColorAt(0.5, QColor(neon.red(), neon.green(), neon.blue(), 230))
+            fill_grad.setColorAt(1.0, QColor(
+                max(neon.red() - 30, 0),
+                max(neon.green() - 30, 0),
+                max(neon.blue() - 30, 0), 200))
+
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(fill_grad))
+            painter.drawRoundedRect(fill_rect, 2, 2)
+
+        # ── 5. 边框 ──
+        border_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 70), 0.8)
+        painter.setPen(border_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(bar_rect, 3.5, 3.5)
+
+        # ── 6. 光点 ──
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(255, 255, 255, 45)))
+        if vertical:
+            painter.drawEllipse(QPointF(bar_rect.center().x(), bar_rect.top() + 3), 1.5, 1.5)
+        else:
+            painter.drawEllipse(QPointF(bar_rect.left() + 3, bar_rect.center().y()), 1.5, 1.5)
 
     # ── 事件 ──────────────────────────────────────────
 
@@ -335,7 +474,11 @@ class FloatingBall(QWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self._dragging and (event.buttons() & Qt.MouseButton.LeftButton):
-            self._did_drag = True
+            if not self._did_drag:
+                self._did_drag = True
+                if self._snapped_edge is not None:
+                    self._snapped_edge = None
+                    self.update()
             new_pos = event.globalPosition().toPoint() - self._drag_offset
 
             # 底部边界：禁止球体掉到屏幕工作区下方
@@ -412,6 +555,12 @@ class FloatingBall(QWidget):
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # 吸附态 → 条形进度指示器
+        if self._snapped_edge is not None:
+            self._paint_snapped_bar(painter)
+            painter.end()
+            return
 
         # 翻转变换（球心为中心水平缩放）
         if self._flip_scale < 1.0:
