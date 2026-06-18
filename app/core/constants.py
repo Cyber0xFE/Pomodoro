@@ -33,6 +33,7 @@ DEFAULT_SETTINGS = {
     "hotkey_enabled": True,
     "auto_start": False,
     "startup_mode": "pomodoro",
+    "snap_enabled": True,
 }
 
 # 预设时长选项（分钟）

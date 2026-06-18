@@ -275,6 +275,10 @@ class FloatingBall(QWidget):
 
     def _snap_to_edge(self):
         """拖拽释放时若球体边缘靠近屏幕边缘，则将球体藏到屏幕外，仅留 TAIL_WIDTH px 尾巴。"""
+        if not self._settings.snap_enabled:
+            self._snapped_edge = None
+            return
+
         ball_center = self.frameGeometry().center()
         screen = QApplication.screenAt(ball_center)
         if screen is None:

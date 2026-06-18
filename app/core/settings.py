@@ -143,3 +143,11 @@ class SettingsManager(QObject):
     @startup_mode.setter
     def startup_mode(self, value: str):
         self.set("startup_mode", value)
+
+    @property
+    def snap_enabled(self) -> bool:
+        return self.get("snap_enabled")
+
+    @snap_enabled.setter
+    def snap_enabled(self, value: bool):
+        self.set("snap_enabled", value)
