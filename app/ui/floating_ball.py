@@ -110,6 +110,10 @@ class FloatingBall(QWidget):
         self._connect_signals()
         self._apply_theme(theme_manager.current)
 
+        # 网速数据始终在后台更新，供吸附条显示
+        self._monitor.start()
+        self._anim_timer.start()
+
     # ── 窗口设置 ──────────────────────────────────────
 
     def _setup_window(self):
@@ -187,11 +191,7 @@ class FloatingBall(QWidget):
             self._chev_phase_up = 0.0
             self._chev_phase_down = 0.0
             self._ripple_phase = 0.0
-            self._monitor.start()
-            self._anim_timer.start()
         else:
-            self._monitor.stop()
-            self._anim_timer.stop()
             total = self._timer.total
             self._display_text = _format_time(total) if total > 0 else "--:--"
         self.update()
@@ -458,7 +458,7 @@ class FloatingBall(QWidget):
             painter.drawEllipse(QPointF(bar_rect.left() + 3, bar_rect.center().y()), 1.5, 1.5)
 
         # ── 7. 网速文字（仅上下吸附时显示，1s 刷新）──
-        if not vertical and self._display_mode == DisplayMode.MONITOR:
+        if not vertical:
             def _short_speed(bps: float) -> str:
                 if bps >= 1_000_000:
                     return f"{bps / 1_000_000:.1f}M"
