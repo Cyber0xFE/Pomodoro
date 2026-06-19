@@ -282,7 +282,7 @@ class FloatingBall(QWidget):
         d = self._ball_diameter
         tail = TAIL_WIDTH
         bw = BAR_WIDTH
-        pad = 5  # 点击容差
+        pad = 5
 
         if self._snapped_edge in ('left', 'right'):
             bar_center_x = (g + tail / 2) if self._snapped_edge == 'right' else (g + d - tail / 2)
@@ -291,11 +291,14 @@ class FloatingBall(QWidget):
             bar_y = g + 8 - pad
             bar_h = d - 16 + pad * 2
         else:
+            # 水平宽条：bar_h=22, bar_w=d-6, bar_center_y = g+tail/2 or g+d-tail/2
+            bar_h = 22
+            bar_w = d - 6
             bar_center_y = (g + tail / 2) if self._snapped_edge == 'bottom' else (g + d - tail / 2)
-            bar_y = bar_center_y - bw / 2 - pad
-            bar_h = bw + pad * 2
-            bar_x = g + 8 - pad
-            bar_w = d - 16 + pad * 2
+            bar_y = bar_center_y - bar_h / 2 - pad
+            bar_h = bar_h + pad * 2
+            bar_x = g + 3 - pad
+            bar_w = bar_w + pad * 2
 
         return QRectF(bar_x, bar_y, bar_w, bar_h).contains(local_pos)
 
@@ -368,7 +371,7 @@ class FloatingBall(QWidget):
             return self._timer.fraction_remaining
 
     def _paint_snapped_bar(self, painter: QPainter):
-        """吸附态绘制 — 赛博 HUD 风格窄条进度指示器."""
+        """吸附态绘制 — 赛博 HUD 风格进度指示器."""
         g = self._glow
         d = self._ball_diameter
         tail = TAIL_WIDTH
@@ -377,8 +380,9 @@ class FloatingBall(QWidget):
         bg = QColor(self._bg)
         edge = self._snapped_edge
 
-        # ── 根据吸附边确定条形区域与方向（窄条居中于尾巴区域内）──
+        # ── 根据吸附边确定条形区域与方向 ──
         if edge in ('left', 'right'):
+            # 垂直窄条（左/右吸附）
             margin = 8
             bar_center_x = (g + tail / 2) if edge == 'right' else (g + d - tail / 2)
             bar_x = bar_center_x - bw / 2
@@ -387,12 +391,12 @@ class FloatingBall(QWidget):
             bar_y = g + margin
             vertical = True
         else:
-            margin = 8
+            # 水平宽条（上/下吸附）：加宽加长，文字嵌入条内
+            bar_h = 22
+            bar_w = d - 6
             bar_center_y = (g + tail / 2) if edge == 'bottom' else (g + d - tail / 2)
-            bar_y = bar_center_y - bw / 2
-            bar_h = bw
-            bar_w = d - margin * 2
-            bar_x = g + margin
+            bar_y = bar_center_y - bar_h / 2
+            bar_x = g + 3
             vertical = False
 
         bar_rect = QRectF(bar_x, bar_y, bar_w, bar_h)
@@ -482,7 +486,7 @@ class FloatingBall(QWidget):
         else:
             painter.drawEllipse(QPointF(bar_rect.left() + 3, bar_rect.center().y()), 1.5, 1.5)
 
-        # ── 7. 网速文字（仅上下吸附时显示，1s 刷新）──
+        # ── 7. 网速文字（仅上下吸附时显示，1s 刷新，嵌入条内）──
         if not vertical:
             def _short_speed(bps: float) -> str:
                 if bps >= 1_000_000:
@@ -499,32 +503,16 @@ class FloatingBall(QWidget):
                 self._snap_speed_ts = now
 
             text = self._snap_speed_text
-
-            font = QFont(self._fonts.state.family, 11)
+            font = QFont(self._fonts.state.family, 10)
             font.setBold(True)
             painter.setFont(font)
 
-            fm = QFontMetrics(font)
-            text_h = fm.height()
-            text_y = bar_y - text_h - 5 if edge == 'bottom' else bar_y + bar_h + 5
-            text_rect = QRectF(bar_x - 4, text_y, bar_w + 8, text_h)
-
-            # 半透明深色背景
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(QColor(0, 0, 0, 170)))
-            painter.drawRoundedRect(text_rect.adjusted(-2, -2, 2, 2), 3, 3)
-
-            # 文字辉光
-            for i, alpha in enumerate([35, 20]):
-                tc = QColor(neon.red(), neon.green(), neon.blue(), alpha)
-                painter.setPen(tc)
-                off = i + 1
-                painter.drawText(text_rect.translated(off, 0), Qt.AlignmentFlag.AlignCenter, text)
-                painter.drawText(text_rect.translated(-off, 0), Qt.AlignmentFlag.AlignCenter, text)
-                painter.drawText(text_rect.translated(0, off), Qt.AlignmentFlag.AlignCenter, text)
-                painter.drawText(text_rect.translated(0, -off), Qt.AlignmentFlag.AlignCenter, text)
+            # 文字描边（深色轮廓，在填充/背景上都可读）
+            painter.setPen(QPen(QColor(0, 0, 0, 180), 2.5))
+            painter.drawText(bar_rect, Qt.AlignmentFlag.AlignCenter, text)
+            # 主文字
             painter.setPen(QColor(255, 255, 255, 240))
-            painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, text)
+            painter.drawText(bar_rect, Qt.AlignmentFlag.AlignCenter, text)
 
     # ── 事件 ──────────────────────────────────────────
 
