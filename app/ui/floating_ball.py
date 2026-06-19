@@ -291,13 +291,13 @@ class FloatingBall(QWidget):
             bar_y = g + 8 - pad
             bar_h = d - 16 + pad * 2
         else:
-            # 水平宽条：bar_h=22, bar_w=d-6, bar_center_y = g+tail/2 or g+d-tail/2
+            # 水平宽条：bar_h=22, bar_w=d, bar_center_y = g+tail/2 or g+d-tail/2
             bar_h = 22
-            bar_w = d - 6
+            bar_w = d
             bar_center_y = (g + tail / 2) if self._snapped_edge == 'bottom' else (g + d - tail / 2)
             bar_y = bar_center_y - bar_h / 2 - pad
             bar_h = bar_h + pad * 2
-            bar_x = g + 3 - pad
+            bar_x = g - pad
             bar_w = bar_w + pad * 2
 
         return QRectF(bar_x, bar_y, bar_w, bar_h).contains(local_pos)
@@ -393,10 +393,10 @@ class FloatingBall(QWidget):
         else:
             # 水平宽条（上/下吸附）：加宽加长，文字嵌入条内
             bar_h = 22
-            bar_w = d - 6
+            bar_w = d
             bar_center_y = (g + tail / 2) if edge == 'bottom' else (g + d - tail / 2)
             bar_y = bar_center_y - bar_h / 2
-            bar_x = g + 3
+            bar_x = g
             vertical = False
 
         bar_rect = QRectF(bar_x, bar_y, bar_w, bar_h)
@@ -503,7 +503,7 @@ class FloatingBall(QWidget):
                 self._snap_speed_ts = now
 
             text = self._snap_speed_text
-            font = QFont(self._fonts.state.family, 10)
+            font = QFont(self._fonts.state.family, 12)
             font.setBold(True)
             painter.setFont(font)
 
