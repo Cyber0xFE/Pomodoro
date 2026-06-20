@@ -63,10 +63,6 @@ class FloatingBall(QWidget):
         self._snapped_edge = None  # 'left' | 'right' | 'top' | 'bottom' | None
         self._snap_speed_text = ""
         self._snap_speed_ts = 0.0
-        self._snap_pending = False
-        self._snap_restore_edge = None
-        self._snap_restore_x = 0
-        self._snap_restore_y = 0
 
         self._ball_diameter = BALL_SIZE
         glow = 20
@@ -362,70 +358,6 @@ class FloatingBall(QWidget):
         else:
             self._snapped_edge = None
 
-    # ── 悬停展开 / 离开吸附 ──────────────────────────
-
-    def _unsnap_for_hover(self):
-        """悬停吸附条 → 平滑展开完整球体."""
-        self._snap_pending = True
-        self._snap_restore_edge = self._snapped_edge
-        self._snap_restore_x = self.x()
-        self._snap_restore_y = self.y()
-        self._snapped_edge = None
-        self.update()
-
-        screen = QApplication.screenAt(self.frameGeometry().center())
-        if screen is None:
-            screen = QApplication.primaryScreen()
-        geo = screen.availableGeometry()
-        g = self._glow
-        d = self._ball_diameter
-
-        if self._snap_restore_edge == 'right':
-            new_x = geo.right() - g - d
-        elif self._snap_restore_edge == 'left':
-            new_x = geo.left() - g
-        else:
-            new_x = self._snap_restore_x
-
-        if self._snap_restore_edge == 'bottom':
-            new_y = geo.bottom() - g - d
-        elif self._snap_restore_edge == 'top':
-            new_y = geo.top() - g
-        else:
-            new_y = self._snap_restore_y
-
-        self._animate_slide(self._snap_restore_x, self._snap_restore_y, new_x, new_y)
-
-    def _restore_snap(self):
-        """离开球体 → 平滑吸附回边缘."""
-        if getattr(self, '_hover_anim', None) is not None:
-            self._hover_anim.stop()
-        self._snapped_edge = self._snap_restore_edge
-        self.update()
-        self._animate_slide(self.x(), self.y(), self._snap_restore_x, self._snap_restore_y)
-        self._snap_pending = False
-
-    def _animate_slide(self, from_x, from_y, to_x, to_y):
-        """平滑滑动动画（QVariantAnimation 插值窗口位置）."""
-        if getattr(self, '_hover_anim', None) is not None:
-            self._hover_anim.stop()
-        anim = QVariantAnimation()
-        anim.setDuration(220)
-        anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
-        anim.setStartValue(QPointF(from_x, from_y))
-        anim.setEndValue(QPointF(to_x, to_y))
-        anim.valueChanged.connect(lambda v: self.move(int(v.x()), int(v.y())))
-        anim.finished.connect(self._on_hover_anim_done)
-        anim.start()
-        self._hover_anim = anim
-
-    def _on_hover_anim_done(self):
-        """滑动完成回调."""
-        self._hover_anim = None
-        if not self._snap_pending and self._snapped_edge is not None:
-            self._settings.window_x = self.x()
-            self._settings.window_y = self.y()
-
     # ── 吸附条进度指示 ───────────────────────────────
 
     def _get_snap_progress(self) -> float:
@@ -591,10 +523,6 @@ class FloatingBall(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._did_drag = False
-            self._snap_pending = False
-            if getattr(self, '_hover_anim', None) is not None:
-                self._hover_anim.stop()
-                self._hover_anim = None
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
         elif event.button() == Qt.MouseButton.RightButton:
@@ -639,18 +567,58 @@ class FloatingBall(QWidget):
             QApplication.restoreOverrideCursor()
         super().mouseMoveEvent(event)
 
-    def enterEvent(self, event):
-        """鼠标进入吸附条时自动展开为完整球体."""
-        if self._snapped_edge is not None and not self._snap_pending:
-            self._unsnap_for_hover()
-        super().enterEvent(event)
-
     def leaveEvent(self, event):
-        """鼠标离开窗口时恢复光标；悬停展开后离开则重新吸附."""
-        if self._snap_pending:
-            self._restore_snap()
+        """鼠标离开窗口时恢复光标."""
         QApplication.restoreOverrideCursor()
         super().leaveEvent(event)
+
+    def _pop_out(self):
+        """点击吸附条时平滑弹出球体."""
+        edge = self._snapped_edge
+        if edge is None:
+            return
+
+        sc = QApplication.screenAt(self.frameGeometry().center())
+        if sc is None:
+            sc = QApplication.primaryScreen()
+        geo = sc.availableGeometry()
+        g = self._glow
+        d = self._ball_diameter
+        tail = TAIL_WIDTH
+
+        if edge == 'right':
+            start_x, end_x = geo.right() - tail - g, geo.right() - d - g
+            start_y = end_y = self.y()
+        elif edge == 'left':
+            start_x, end_x = geo.left() + tail - g - d, geo.left() - g
+            start_y = end_y = self.y()
+        elif edge == 'bottom':
+            start_y, end_y = geo.bottom() - tail - g, geo.bottom() - d - g
+            start_x = end_x = self.x()
+        else:  # top
+            start_y, end_y = geo.top() + tail - g - d, geo.top() - g
+            start_x = end_x = self.x()
+
+        self._snapped_edge = None
+        self.update()
+
+        self._pop_anim = QVariantAnimation(self)
+        self._pop_anim.setDuration(220)
+        self._pop_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._pop_anim.setStartValue(0.0)
+        self._pop_anim.setEndValue(1.0)
+
+        def on_value(v):
+            t = float(v)
+            self.move(int(start_x + (end_x - start_x) * t),
+                      int(start_y + (end_y - start_y) * t))
+
+        self._pop_anim.valueChanged.connect(on_value)
+        self._pop_anim.finished.connect(lambda: (
+            setattr(self._settings, 'window_x', self.x()),
+            setattr(self._settings, 'window_y', self.y()),
+        ))
+        self._pop_anim.start()
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -658,6 +626,8 @@ class FloatingBall(QWidget):
                 self._snap_to_edge()
                 self._settings.window_x = self.x()
                 self._settings.window_y = self.y()
+            elif self._dragging and self._snapped_edge is not None:
+                self._pop_out()
             self._dragging = False
             event.accept()
             return
