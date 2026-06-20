@@ -7,7 +7,7 @@ import winsound
 
 from PySide6.QtCore import QEasingCurve, Property, QPropertyAnimation, QPointF, Qt, QPoint, QRectF, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import (
-    QBrush, QColor, QFont, QFontMetrics, QMouseEvent, QPainter,
+    QBrush, QColor, QCursor, QFont, QFontMetrics, QMouseEvent, QPainter,
     QPainterPath, QPen, QPolygonF, QRadialGradient, QTransform, QWheelEvent, QLinearGradient,
 )
 from PySide6.QtWidgets import QApplication, QWidget
@@ -61,6 +61,7 @@ class FloatingBall(QWidget):
         self._dragging = False
         self._drag_offset = QPoint()
         self._snapped_edge = None  # 'left' | 'right' | 'top' | 'bottom' | None
+        self._expanded = False     # 悬停时临时展开为完整球体
         self._snap_speed_text = ""
         self._snap_speed_ts = 0.0
 
@@ -105,6 +106,11 @@ class FloatingBall(QWidget):
         self._anim_timer = QTimer(self)
         self._anim_timer.setInterval(ANIM_FRAME_MS)
         self._anim_timer.timeout.connect(self._on_anim_tick)
+
+        # 悬停展开后定期检查鼠标是否还在窗口内
+        self._hover_timer = QTimer(self)
+        self._hover_timer.setInterval(150)
+        self._hover_timer.timeout.connect(self._on_hover_check)
 
         self._setup_window()
         self._connect_signals()
@@ -267,8 +273,8 @@ class FloatingBall(QWidget):
         return QPointF(g + r, g + r)
 
     def _is_inside_ball(self, local_pos: QPoint) -> bool:
-        """判断本地坐标是否在球体圆形范围内（吸附态改为条形命中检测）."""
-        if self._snapped_edge is not None:
+        """判断本地坐标是否在球体圆形范围内（吸附态未展开时改为条形命中检测）."""
+        if self._snapped_edge is not None and not self._expanded:
             return self._is_inside_bar(local_pos)
         center = self._ball_center()
         dx = local_pos.x() - center.x()
@@ -523,6 +529,12 @@ class FloatingBall(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._did_drag = False
+            # 点击悬停展开的球体 → 取消吸附态，球留在当前位置
+            if self._expanded:
+                self._expanded = False
+                self._snapped_edge = None
+                self._hover_timer.stop()
+                self.update()
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
         elif event.button() == Qt.MouseButton.RightButton:
@@ -560,23 +572,45 @@ class FloatingBall(QWidget):
             self.move(new_pos)
             event.accept()
             return
-        # 光标反馈（用全局覆盖，无边框窗口的 setCursor 不生效）
-        if self._is_inside_ball(event.position().toPoint()):
+        # 光标反馈 + 悬停吸附条自动展开
+        inside = self._is_inside_ball(event.position().toPoint())
+        # 展开态整个窗口都是停留区，离开窗口才缩回
+        if self._expanded:
+            inside = True
+
+        if inside:
             QApplication.setOverrideCursor(Qt.CursorShape.PointingHandCursor)
+            if self._snapped_edge is not None and not self._expanded:
+                self._pop_out(from_hover=True)
         else:
             QApplication.restoreOverrideCursor()
+            if self._expanded and self._snapped_edge is not None:
+                self._snap_back()
         super().mouseMoveEvent(event)
 
     def leaveEvent(self, event):
-        """鼠标离开窗口时恢复光标."""
+        """鼠标离开窗口时恢复光标；悬停展开态定时器兜底缩回."""
         QApplication.restoreOverrideCursor()
         super().leaveEvent(event)
 
-    def _pop_out(self):
-        """点击吸附条时平滑弹出球体."""
+    def _on_hover_check(self):
+        """定时检查：悬停展开后鼠标若已离开窗口则缩回."""
+        if not self._expanded or self._snapped_edge is None:
+            self._hover_timer.stop()
+            return
+        if not self.frameGeometry().contains(QCursor.pos()):
+            self._snap_back()
+
+    def _pop_out(self, from_hover=False):
+        """平滑弹出球体（点击或悬停吸附条时）."""
         edge = self._snapped_edge
         if edge is None:
             return
+
+        # 停止可能正在进行的缩回动画
+        if getattr(self, '_snap_anim', None) is not None:
+            self._snap_anim.stop()
+            self._snap_anim = None
 
         sc = QApplication.screenAt(self.frameGeometry().center())
         if sc is None:
@@ -599,8 +633,10 @@ class FloatingBall(QWidget):
             start_y, end_y = geo.top() + tail - g - d, geo.top() - g
             start_x = end_x = self.x()
 
-        self._snapped_edge = None
+        self._expanded = True
         self.update()
+        if from_hover:
+            self._hover_timer.start()
 
         self._pop_anim = QVariantAnimation(self)
         self._pop_anim.setDuration(220)
@@ -620,13 +656,70 @@ class FloatingBall(QWidget):
         ))
         self._pop_anim.start()
 
+    def _snap_back(self):
+        """平滑缩回吸附态."""
+        if self._snapped_edge is None:
+            return
+        if not self._expanded:
+            return
+
+        self._hover_timer.stop()
+
+        # 停止可能正在进行的弹出动画
+        if getattr(self, '_pop_anim', None) is not None:
+            self._pop_anim.stop()
+            self._pop_anim = None
+
+        sc = QApplication.screenAt(self.frameGeometry().center())
+        if sc is None:
+            sc = QApplication.primaryScreen()
+        geo = sc.availableGeometry()
+        g = self._glow
+        d = self._ball_diameter
+        tail = TAIL_WIDTH
+        edge = self._snapped_edge
+
+        if edge == 'right':
+            end_x = geo.right() - tail - g
+            start_x, start_y, end_y = self.x(), self.y(), self.y()
+        elif edge == 'left':
+            end_x = geo.left() + tail - g - d
+            start_x, start_y, end_y = self.x(), self.y(), self.y()
+        elif edge == 'bottom':
+            end_y = geo.bottom() - tail - g
+            start_x, start_y, end_x = self.x(), self.y(), self.x()
+        else:  # top
+            end_y = geo.top() + tail - g - d
+            start_x, start_y, end_x = self.x(), self.y(), self.x()
+
+        self._expanded = False
+        self.update()
+
+        self._snap_anim = QVariantAnimation(self)
+        self._snap_anim.setDuration(220)
+        self._snap_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._snap_anim.setStartValue(0.0)
+        self._snap_anim.setEndValue(1.0)
+
+        def on_value(v):
+            t = float(v)
+            self.move(int(start_x + (end_x - start_x) * t),
+                      int(start_y + (end_y - start_y) * t))
+
+        self._snap_anim.valueChanged.connect(on_value)
+        self._snap_anim.finished.connect(lambda: (
+            setattr(self._settings, 'window_x', self.x()),
+            setattr(self._settings, 'window_y', self.y()),
+        ))
+        self._snap_anim.start()
+
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             if self._dragging and self._did_drag:
                 self._snap_to_edge()
                 self._settings.window_x = self.x()
                 self._settings.window_y = self.y()
-            elif self._dragging and self._snapped_edge is not None:
+            elif self._dragging and self._snapped_edge is not None and not self._expanded:
                 self._pop_out()
             self._dragging = False
             event.accept()
@@ -670,8 +763,8 @@ class FloatingBall(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # 吸附态 → 条形进度指示器
-        if self._snapped_edge is not None:
+        # 吸附态（未展开）→ 条形进度指示器
+        if self._snapped_edge is not None and not self._expanded:
             self._paint_snapped_bar(painter)
             painter.end()
             return
