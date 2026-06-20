@@ -63,6 +63,10 @@ class FloatingBall(QWidget):
         self._snapped_edge = None  # 'left' | 'right' | 'top' | 'bottom' | None
         self._snap_speed_text = ""
         self._snap_speed_ts = 0.0
+        self._snap_pending = False
+        self._snap_restore_edge = None
+        self._snap_restore_x = 0
+        self._snap_restore_y = 0
 
         self._ball_diameter = BALL_SIZE
         glow = 20
@@ -358,6 +362,49 @@ class FloatingBall(QWidget):
         else:
             self._snapped_edge = None
 
+    # ── 悬停展开 / 离开吸附 ──────────────────────────
+
+    def _unsnap_for_hover(self):
+        """悬停吸附条 → 展开完整球体."""
+        self._snap_pending = True
+        self._snap_restore_edge = self._snapped_edge
+        self._snap_restore_x = self.x()
+        self._snap_restore_y = self.y()
+        self._snapped_edge = None
+
+        screen = QApplication.screenAt(self.frameGeometry().center())
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        geo = screen.availableGeometry()
+        g = self._glow
+        d = self._ball_diameter
+
+        if self._snap_restore_edge == 'right':
+            new_x = geo.right() - g - d
+        elif self._snap_restore_edge == 'left':
+            new_x = geo.left() - g
+        else:
+            new_x = self._snap_restore_x
+
+        if self._snap_restore_edge == 'bottom':
+            new_y = geo.bottom() - g - d
+        elif self._snap_restore_edge == 'top':
+            new_y = geo.top() - g
+        else:
+            new_y = self._snap_restore_y
+
+        self.move(new_x, new_y)
+        self.update()
+
+    def _restore_snap(self):
+        """离开球体 → 重新吸附回边缘."""
+        self._snap_pending = False
+        self._snapped_edge = self._snap_restore_edge
+        self.move(self._snap_restore_x, self._snap_restore_y)
+        self._settings.window_x = self._snap_restore_x
+        self._settings.window_y = self._snap_restore_y
+        self.update()
+
     # ── 吸附条进度指示 ───────────────────────────────
 
     def _get_snap_progress(self) -> float:
@@ -523,6 +570,7 @@ class FloatingBall(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._did_drag = False
+            self._snap_pending = False
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
         elif event.button() == Qt.MouseButton.RightButton:
@@ -567,8 +615,16 @@ class FloatingBall(QWidget):
             QApplication.restoreOverrideCursor()
         super().mouseMoveEvent(event)
 
+    def enterEvent(self, event):
+        """鼠标进入吸附条时自动展开为完整球体."""
+        if self._snapped_edge is not None and not self._snap_pending:
+            self._unsnap_for_hover()
+        super().enterEvent(event)
+
     def leaveEvent(self, event):
-        """鼠标离开窗口时恢复光标."""
+        """鼠标离开窗口时恢复光标；悬停展开后离开则重新吸附."""
+        if self._snap_pending:
+            self._restore_snap()
         QApplication.restoreOverrideCursor()
         super().leaveEvent(event)
 
