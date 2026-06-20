@@ -5,7 +5,7 @@ import math
 import time
 import winsound
 
-from PySide6.QtCore import QEasingCurve, Property, QPropertyAnimation, QPointF, Qt, QPoint, QRectF, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, Property, QPropertyAnimation, QPointF, Qt, QPoint, QRectF, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import (
     QBrush, QColor, QFont, QFontMetrics, QMouseEvent, QPainter,
     QPainterPath, QPen, QPolygonF, QRadialGradient, QTransform, QWheelEvent, QLinearGradient,
@@ -365,12 +365,13 @@ class FloatingBall(QWidget):
     # ── 悬停展开 / 离开吸附 ──────────────────────────
 
     def _unsnap_for_hover(self):
-        """悬停吸附条 → 展开完整球体."""
+        """悬停吸附条 → 平滑展开完整球体."""
         self._snap_pending = True
         self._snap_restore_edge = self._snapped_edge
         self._snap_restore_x = self.x()
         self._snap_restore_y = self.y()
         self._snapped_edge = None
+        self.update()
 
         screen = QApplication.screenAt(self.frameGeometry().center())
         if screen is None:
@@ -393,17 +394,37 @@ class FloatingBall(QWidget):
         else:
             new_y = self._snap_restore_y
 
-        self.move(new_x, new_y)
-        self.update()
+        self._animate_slide(self._snap_restore_x, self._snap_restore_y, new_x, new_y)
 
     def _restore_snap(self):
-        """离开球体 → 重新吸附回边缘."""
-        self._snap_pending = False
+        """离开球体 → 平滑吸附回边缘."""
+        if getattr(self, '_hover_anim', None) is not None:
+            self._hover_anim.stop()
         self._snapped_edge = self._snap_restore_edge
-        self.move(self._snap_restore_x, self._snap_restore_y)
-        self._settings.window_x = self._snap_restore_x
-        self._settings.window_y = self._snap_restore_y
         self.update()
+        self._animate_slide(self.x(), self.y(), self._snap_restore_x, self._snap_restore_y)
+        self._snap_pending = False
+
+    def _animate_slide(self, from_x, from_y, to_x, to_y):
+        """平滑滑动动画（QVariantAnimation 插值窗口位置）."""
+        if getattr(self, '_hover_anim', None) is not None:
+            self._hover_anim.stop()
+        anim = QVariantAnimation()
+        anim.setDuration(220)
+        anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        anim.setStartValue(QPointF(from_x, from_y))
+        anim.setEndValue(QPointF(to_x, to_y))
+        anim.valueChanged.connect(lambda v: self.move(int(v.x()), int(v.y())))
+        anim.finished.connect(self._on_hover_anim_done)
+        anim.start()
+        self._hover_anim = anim
+
+    def _on_hover_anim_done(self):
+        """滑动完成回调."""
+        self._hover_anim = None
+        if not self._snap_pending and self._snapped_edge is not None:
+            self._settings.window_x = self.x()
+            self._settings.window_y = self.y()
 
     # ── 吸附条进度指示 ───────────────────────────────
 
@@ -571,6 +592,9 @@ class FloatingBall(QWidget):
             self._dragging = True
             self._did_drag = False
             self._snap_pending = False
+            if getattr(self, '_hover_anim', None) is not None:
+                self._hover_anim.stop()
+                self._hover_anim = None
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
         elif event.button() == Qt.MouseButton.RightButton:
