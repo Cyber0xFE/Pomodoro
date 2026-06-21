@@ -297,8 +297,8 @@ class FloatingBall(QWidget):
             bar_y = g + 8 - pad
             bar_h = d - 16 + pad * 2
         else:
-            # 水平宽条：bar_h=22, bar_w=d, bar_center_y = g+tail/2 or g+d-tail/2
-            bar_h = 22
+            # 水平宽条：bar_h=26, bar_w=d, bar_center_y = g+tail/2 or g+d-tail/2
+            bar_h = 26
             bar_w = d
             bar_center_y = (g + tail / 2) if self._snapped_edge == 'bottom' else (g + d - tail / 2)
             bar_y = bar_center_y - bar_h / 2 - pad
@@ -398,7 +398,7 @@ class FloatingBall(QWidget):
             vertical = True
         else:
             # 水平宽条（上/下吸附）：加宽加长，文字嵌入条内
-            bar_h = 22
+            bar_h = 26
             bar_w = d
             bar_center_y = (g + tail / 2) if edge == 'bottom' else (g + d - tail / 2)
             bar_y = bar_center_y - bar_h / 2
@@ -408,89 +408,102 @@ class FloatingBall(QWidget):
         bar_rect = QRectF(bar_x, bar_y, bar_w, bar_h)
         progress = max(0.0, min(self._get_snap_progress(), 1.0))
 
-        # ── 1. 外层辉光（3 层，与球体一致）──
-        for i, alpha in enumerate([20, 38, 58]):
-            glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha),
-                            3 + i * 2)
+        # ── 1. 外层辉光（4 层，模拟球体光晕）──
+        for i, (alpha, w) in enumerate([(15, 6), (30, 4), (50, 2.5), (70, 1)]):
+            glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), w)
             glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(glow_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            adj = 1.5 + i * 1.5
-            painter.drawRoundedRect(bar_rect.adjusted(-adj, -adj, adj, adj), 5 + i, 5 + i)
+            adj = 1 + i * 1.8
+            painter.drawRoundedRect(bar_rect.adjusted(-adj, -adj, adj, adj), 6 + i, 6 + i)
 
-        # ── 2. 背景 ──
+        # ── 2. 背景（深色凹陷感）──
         painter.setPen(Qt.PenStyle.NoPen)
+        # 底层暗影
+        painter.setBrush(QBrush(QColor(0, 0, 0, 140)))
+        painter.drawRoundedRect(bar_rect.adjusted(1, 1, -1, -1), 3, 3)
+        # 主体渐变
         if vertical:
             bg_grad = QLinearGradient(0, bar_rect.top(), 0, bar_rect.bottom())
         else:
             bg_grad = QLinearGradient(bar_rect.left(), 0, bar_rect.right(), 0)
-        bg_grad.setColorAt(0.0, bg.lighter(125))
-        bg_grad.setColorAt(0.5, bg)
-        bg_grad.setColorAt(1.0, bg.darker(140))
+        bg_grad.setColorAt(0.0, bg.lighter(115))
+        bg_grad.setColorAt(0.3, bg.darker(110))
+        bg_grad.setColorAt(0.7, bg.darker(130))
+        bg_grad.setColorAt(1.0, bg.lighter(110))
         painter.setBrush(QBrush(bg_grad))
-        painter.drawRoundedRect(bar_rect, 3, 3)
+        painter.drawRoundedRect(bar_rect.adjusted(1, 1, -1, -1), 3, 3)
 
-        # ── 3. 刻度线 ──
-        n_ticks = 5
-        tick_color = QColor(neon.red(), neon.green(), neon.blue(), 35)
-        painter.setPen(QPen(tick_color, 0.6))
+        # ── 3. 分段刻度 ──
+        n_ticks = 7
+        tick_color = QColor(neon.red(), neon.green(), neon.blue(), 55)
+        painter.setPen(QPen(tick_color, 0.7))
         if vertical:
             for i in range(1, n_ticks + 1):
                 ty = bar_y + bar_h * i / (n_ticks + 1)
-                painter.drawLine(QPointF(bar_x - 1.5, ty),
-                                 QPointF(bar_x + 2, ty))
-                painter.drawLine(QPointF(bar_x + bar_w - 2, ty),
-                                 QPointF(bar_x + bar_w + 1.5, ty))
+                painter.drawLine(QPointF(bar_x - 2, ty), QPointF(bar_x + 3, ty))
+                painter.drawLine(QPointF(bar_x + bar_w - 3, ty), QPointF(bar_x + bar_w + 2, ty))
         else:
             for i in range(1, n_ticks + 1):
                 tx = bar_x + bar_w * i / (n_ticks + 1)
-                painter.drawLine(QPointF(tx, bar_y - 1.5),
-                                 QPointF(tx, bar_y + 2))
-                painter.drawLine(QPointF(tx, bar_y + bar_h - 2),
-                                 QPointF(tx, bar_y + bar_h + 1.5))
+                painter.drawLine(QPointF(tx, bar_y - 2), QPointF(tx, bar_y + 3))
+                painter.drawLine(QPointF(tx, bar_y + bar_h - 3), QPointF(tx, bar_y + bar_h + 2))
 
-        # ── 4. 进度填充 ──
+        # ── 4. 进度填充（分段 + 高亮前沿）──
         if progress > 0.001:
-            pad = 1.2
+            pad = 2
             if vertical:
-                fill_h = max((bar_h - pad * 2) * progress, 2)
+                fill_full = bar_h - pad * 2
+                fill_h = max(fill_full * progress, 3)
                 fill_rect = QRectF(bar_x + pad, bar_y + bar_h - pad - fill_h,
                                    bar_w - pad * 2, fill_h)
                 fill_grad = QLinearGradient(0, bar_rect.bottom(), 0, bar_rect.top())
             else:
-                fill_w = max((bar_w - pad * 2) * progress, 2)
+                fill_full = bar_w - pad * 2
+                fill_w = max(fill_full * progress, 3)
                 fill_rect = QRectF(bar_x + pad, bar_y + pad,
                                    fill_w, bar_h - pad * 2)
                 fill_grad = QLinearGradient(bar_rect.left(), 0, bar_rect.right(), 0)
 
-            fill_grad.setColorAt(0.0, QColor(neon.red(), neon.green(), neon.blue(), 180))
-            fill_grad.setColorAt(0.15, QColor(
-                min(neon.red() + 70, 255),
-                min(neon.green() + 70, 255),
-                min(neon.blue() + 70, 255), 245))
-            fill_grad.setColorAt(0.5, QColor(neon.red(), neon.green(), neon.blue(), 230))
-            fill_grad.setColorAt(1.0, QColor(
-                max(neon.red() - 30, 0),
-                max(neon.green() - 30, 0),
-                max(neon.blue() - 30, 0), 200))
+            fill_grad.setColorAt(0.0, QColor(neon.red() // 3, neon.green() // 3, neon.blue() // 3, 200))
+            fill_grad.setColorAt(0.08, QColor(
+                min(neon.red() + 100, 255),
+                min(neon.green() + 100, 255),
+                min(neon.blue() + 100, 255), 255))
+            fill_grad.setColorAt(0.3, QColor(neon.red(), neon.green(), neon.blue(), 240))
+            fill_grad.setColorAt(0.8, QColor(neon.red(), neon.green(), neon.blue(), 200))
+            fill_grad.setColorAt(1.0, QColor(neon.red() // 2, neon.green() // 2, neon.blue() // 2, 170))
 
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(fill_grad))
-            painter.drawRoundedRect(fill_rect, 2, 2)
+            painter.drawRoundedRect(fill_rect, 2.5, 2.5)
+
+            # 高亮前沿线
+            highlight_alpha = 180
+            if vertical:
+                hl_y = fill_rect.top()
+                painter.setPen(QPen(QColor(255, 255, 255, highlight_alpha), 1.2))
+                painter.drawLine(QPointF(fill_rect.left() + 2, hl_y),
+                                 QPointF(fill_rect.right() - 2, hl_y))
+            else:
+                hl_x = fill_rect.right()
+                painter.setPen(QPen(QColor(255, 255, 255, highlight_alpha), 1.2))
+                painter.drawLine(QPointF(hl_x, fill_rect.top() + 2),
+                                 QPointF(hl_x, fill_rect.bottom() - 2))
 
         # ── 5. 边框 ──
-        border_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 70), 0.8)
-        painter.setPen(border_pen)
+        inner_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 90), 0.8)
+        painter.setPen(inner_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(bar_rect, 3.5, 3.5)
+        painter.drawRoundedRect(bar_rect.adjusted(0.5, 0.5, -0.5, -0.5), 3.5, 3.5)
 
         # ── 6. 光点 ──
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(255, 255, 255, 45)))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 60)))
         if vertical:
-            painter.drawEllipse(QPointF(bar_rect.center().x(), bar_rect.top() + 3), 1.5, 1.5)
+            painter.drawEllipse(QPointF(bar_rect.center().x(), bar_rect.top() + 3), 2, 2)
         else:
-            painter.drawEllipse(QPointF(bar_rect.left() + 3, bar_rect.center().y()), 1.5, 1.5)
+            painter.drawEllipse(QPointF(bar_rect.left() + 3, bar_rect.center().y()), 2, 2)
 
         # ── 7. 网速文字（仅上下吸附时显示，1s 刷新，嵌入条内）──
         if not vertical:
@@ -798,57 +811,81 @@ class FloatingBall(QWidget):
         neon = QColor(self._neon)
         bg = QColor(self._bg)
 
-        # ── 外层辉光 ──
-        for i, alpha in enumerate([25, 45, 65]):
-            glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), 6 + i * 4)
+        # ── 1. 外层辉光（4 层，与条一致）──
+        for i, (alpha, w) in enumerate([(15, 8), (28, 6), (45, 4), (65, 2)]):
+            glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), w)
             glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(glow_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawEllipse(ball_rect.adjusted(-2 - i * 2, -2 - i * 2, 2 + i * 2, 2 + i * 2))
+            adj = 1 + i * 2
+            painter.drawEllipse(ball_rect.adjusted(-adj, -adj, adj, adj))
 
-        # ── 球体背景 ──
-        gradient = QRadialGradient(QPointF(cx - r * 0.15, cy - r * 0.25), r * 1.1)
-        gradient.setColorAt(0.0, bg.lighter(130))
-        gradient.setColorAt(0.7, bg)
-        gradient.setColorAt(1.0, bg.darker(150))
+        # ── 2. 球体背景 ──
+        gradient = QRadialGradient(QPointF(cx - r * 0.2, cy - r * 0.3), r * 1.15)
+        gradient.setColorAt(0.0, bg.lighter(140))
+        gradient.setColorAt(0.4, bg.lighter(108))
+        gradient.setColorAt(0.75, bg)
+        gradient.setColorAt(1.0, bg.darker(160))
         painter.setBrush(QBrush(gradient))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(ball_rect)
 
-        # ── 内圈刻度线 ──
-        painter.setPen(QPen(QColor(neon.red(), neon.green(), neon.blue(), 35), 1))
-        for i in range(12):
-            angle = math.radians(i * 30 - 90)
-            inner_r = r - 10
-            outer_r = r - 5
-            x1 = cx + inner_r * math.cos(angle)
-            y1 = cy + inner_r * math.sin(angle)
-            x2 = cx + outer_r * math.cos(angle)
-            y2 = cy + outer_r * math.sin(angle)
+        # ── 3. 内环（玻璃质感）──
+        inner_ring_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 40), 1.2)
+        painter.setPen(inner_ring_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(ball_rect.adjusted(3, 3, -3, -3))
+
+        # ── 4. 内圈刻度线（24 刻度）──
+        painter.setPen(QPen(QColor(neon.red(), neon.green(), neon.blue(), 30), 0.8))
+        for i in range(24):
+            angle = math.radians(i * 15 - 90)
+            if i % 6 == 0:
+                inner_r2, outer_r2 = r - 12, r - 4   # 整点刻度更长
+            else:
+                inner_r2, outer_r2 = r - 9, r - 5
+            x1 = cx + inner_r2 * math.cos(angle)
+            y1 = cy + inner_r2 * math.sin(angle)
+            x2 = cx + outer_r2 * math.cos(angle)
+            y2 = cy + outer_r2 * math.sin(angle)
             painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
-        # ── 进度弧线（霓虹发光） ──
+        # ── 5. 进度弧线（霓虹发光）──
         if self._timer.is_running and self._timer.fraction_remaining > 0:
-            arc_margin = 6
+            arc_margin = 5
             arc_rect = QRectF(g + arc_margin, g + arc_margin,
                               d - arc_margin * 2, d - arc_margin * 2)
             span = int(self._timer.fraction_remaining * 360 * 16)
+            span_angle = self._timer.fraction_remaining * 360
 
-            for layer in range(3):
-                glow_alpha = [18, 35, 55][layer]
-                glow_w = [8, 5, 3][layer]
+            # 辉光层
+            for layer in range(4):
+                glow_alpha = [12, 22, 38, 58][layer]
+                glow_w = [10, 7, 4.5, 2.5][layer]
                 pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), glow_alpha), glow_w)
                 pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                 painter.setPen(pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawArc(arc_rect, 90 * 16, -span)
 
-            pen = QPen(neon, 2.5)
+            # 主弧线
+            pen = QPen(QColor(
+                min(neon.red() + 50, 255),
+                min(neon.green() + 50, 255),
+                min(neon.blue() + 50, 255)), 2)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(pen)
             painter.drawArc(arc_rect, 90 * 16, -span)
 
-        # ── 时间文字 ──
+            # 弧线端点亮点
+            end_angle = math.radians(90 - span_angle)
+            dot_x = cx + (r - arc_margin) * math.cos(end_angle)
+            dot_y = cy - (r - arc_margin) * math.sin(end_angle)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(255, 255, 255, 200)))
+            painter.drawEllipse(QPointF(dot_x, dot_y), 2.5, 2.5)
+
+        # ── 6. 时间文字 ──
         tf = self._fonts.time
         font = QFont(tf.family, tf.size)
         font.setBold(True)
@@ -857,7 +894,7 @@ class FloatingBall(QWidget):
 
         text_rect = QRectF(0, 0, self.width(), self.height() - 10)
 
-        for i, alpha in enumerate([35, 20, 12]):
+        for i, alpha in enumerate([35, 22, 12]):
             glow_c = QColor(neon.red(), neon.green(), neon.blue(), alpha)
             painter.setPen(glow_c)
             off = i + 1
@@ -866,22 +903,24 @@ class FloatingBall(QWidget):
             painter.drawText(text_rect.translated(0, off), Qt.AlignmentFlag.AlignCenter, self._display_text)
             painter.drawText(text_rect.translated(0, -off), Qt.AlignmentFlag.AlignCenter, self._display_text)
 
-        painter.setPen(QColor(255, 255, 255))
+        painter.setPen(QColor(255, 255, 255, 245))
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, self._display_text)
 
-        # ── 状态指示 ──
+        # ── 7. 状态指示 ──
         sf = self._fonts.state
         state_font = QFont(sf.family, sf.size)
         painter.setFont(state_font)
-        painter.setPen(QColor(neon.red(), neon.green(), neon.blue(), 150))
+        painter.setPen(QColor(neon.red(), neon.green(), neon.blue(), 160))
         state_text = self._get_state_text()
         state_rect = QRectF(0, self.height() / 2 + 10, self.width(), 16)
         painter.drawText(state_rect, Qt.AlignmentFlag.AlignCenter, state_text)
 
-        # ── 顶部光点 ──
+        # ── 8. 高光点（双点）──
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(255, 255, 255, 25)))
-        painter.drawEllipse(QPointF(cx - r * 0.3, cy - r * 0.35), 3, 3)
+        painter.setBrush(QBrush(QColor(255, 255, 255, 35)))
+        painter.drawEllipse(QPointF(cx - r * 0.35, cy - r * 0.4), 3.5, 3.5)
+        painter.setBrush(QBrush(QColor(255, 255, 255, 20)))
+        painter.drawEllipse(QPointF(cx - r * 0.15, cy - r * 0.5), 2, 2)
 
     def _paint_monitor(self, painter: QPainter):
         g = self._glow
@@ -893,13 +932,14 @@ class FloatingBall(QWidget):
         neon = QColor(self._neon)
         bg = QColor(self._bg)
 
-        # ── 外层辉光（不受翻页影响） ──
-        for i, alpha in enumerate([25, 45, 65]):
-            glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), 6 + i * 4)
+        # ── 外层辉光（4 层，不受翻页影响）──
+        for i, (alpha, w) in enumerate([(15, 8), (28, 6), (45, 4), (65, 2)]):
+            glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), w)
             glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(glow_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawEllipse(ball_rect.adjusted(-2 - i * 2, -2 - i * 2, 2 + i * 2, 2 + i * 2))
+            adj = 1 + i * 2
+            painter.drawEllipse(ball_rect.adjusted(-adj, -adj, adj, adj))
 
         # ── 球心区域垂直翻页 ──
         painter.save()
@@ -911,18 +951,27 @@ class FloatingBall(QWidget):
             painter.setTransform(t, True)
 
         # ── 球体背景 ──
-        gradient = QRadialGradient(QPointF(cx - r * 0.15, cy - r * 0.25), r * 1.1)
-        gradient.setColorAt(0.0, bg.lighter(130))
-        gradient.setColorAt(0.7, bg)
-        gradient.setColorAt(1.0, bg.darker(150))
+        gradient = QRadialGradient(QPointF(cx - r * 0.2, cy - r * 0.3), r * 1.15)
+        gradient.setColorAt(0.0, bg.lighter(140))
+        gradient.setColorAt(0.4, bg.lighter(108))
+        gradient.setColorAt(0.75, bg)
+        gradient.setColorAt(1.0, bg.darker(160))
         painter.setBrush(QBrush(gradient))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(ball_rect)
 
-        # ── 顶部光点 ──
+        # ── 内环 ──
+        inner_ring_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 40), 1.2)
+        painter.setPen(inner_ring_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(ball_rect.adjusted(3, 3, -3, -3))
+
+        # ── 高光点（双点）──
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(255, 255, 255, 25)))
-        painter.drawEllipse(QPointF(cx - r * 0.3, cy - r * 0.35), 3, 3)
+        painter.setBrush(QBrush(QColor(255, 255, 255, 35)))
+        painter.drawEllipse(QPointF(cx - r * 0.35, cy - r * 0.4), 3.5, 3.5)
+        painter.setBrush(QBrush(QColor(255, 255, 255, 20)))
+        painter.drawEllipse(QPointF(cx - r * 0.15, cy - r * 0.5), 2, 2)
 
         if self._monitor_sub == "metrics":
             self._paint_monitor_metrics(painter, g, d, cx, cy, r, neon, bg, ball_rect)
@@ -969,35 +1018,59 @@ class FloatingBall(QWidget):
             painter.setBrush(QBrush(water_grad))
             painter.drawPath(wave_path)
 
+            # 水面高亮线
+            if mem_pct > 0.02:
+                surface_pen = QPen(QColor(
+                    min(neon.red() + 80, 255),
+                    min(neon.green() + 80, 255),
+                    min(neon.blue() + 80, 255), 140), 1.2)
+                painter.setPen(surface_pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                surface_path = QPainterPath()
+                surface_path.moveTo(left, water_top)
+                for i in range(n_pts + 1):
+                    px = left + (i / n_pts) * d
+                    py = water_top + ripple_amp * math.sin(
+                        2 * math.pi * (self._ripple_phase + px / wave_len))
+                    surface_path.lineTo(px, py)
+                painter.drawPath(surface_path)
+
             painter.restore()
 
-        # ── 内圈刻度线 ──
-        painter.setPen(QPen(QColor(neon.red(), neon.green(), neon.blue(), 25), 1))
-        for i in range(12):
-            angle = math.radians(i * 30 - 90)
-            x1 = cx + (r - 10) * math.cos(angle)
-            y1 = cy + (r - 10) * math.sin(angle)
-            x2 = cx + (r - 5) * math.cos(angle)
-            y2 = cy + (r - 5) * math.sin(angle)
+        # ── 内圈刻度线（24 刻度）──
+        painter.setPen(QPen(QColor(neon.red(), neon.green(), neon.blue(), 25), 0.8))
+        for i in range(24):
+            angle = math.radians(i * 15 - 90)
+            if i % 6 == 0:
+                inner_r2, outer_r2 = r - 12, r - 4
+            else:
+                inner_r2, outer_r2 = r - 9, r - 5
+            x1 = cx + inner_r2 * math.cos(angle)
+            y1 = cy + inner_r2 * math.sin(angle)
+            x2 = cx + outer_r2 * math.cos(angle)
+            y2 = cy + outer_r2 * math.sin(angle)
             painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
-        # ── CPU 进度弧线 ──
+        # ── CPU 进度弧线（4 层辉光）──
         cpu_pct = self._anim_cpu / 100.0
-        arc_margin = 6
+        arc_margin = 5
         arc_rect = QRectF(g + arc_margin, g + arc_margin,
                           d - arc_margin * 2, d - arc_margin * 2)
         span = int(cpu_pct * 360 * 16)
 
-        for layer in range(3):
-            glow_alpha = [18, 35, 55][layer]
-            glow_w = [8, 5, 3][layer]
+        for layer in range(4):
+            glow_alpha = [12, 22, 38, 58][layer]
+            glow_w = [10, 7, 4.5, 2.5][layer]
             pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), glow_alpha), glow_w)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawArc(arc_rect, 90 * 16, -span)
 
-        pen = QPen(neon, 2.5)
+        pen = QPen(QColor(
+            min(neon.red() + 50, 255),
+            min(neon.green() + 50, 255),
+            min(neon.blue() + 50, 255)), 2)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(pen)
         painter.drawArc(arc_rect, 90 * 16, -span)
@@ -1067,36 +1140,41 @@ class FloatingBall(QWidget):
 
             painter.restore()
 
-        # ── 内圈刻度线 ──
-        painter.setPen(QPen(QColor(neon.red(), neon.green(), neon.blue(), 25), 1))
-        for i in range(12):
-            angle = math.radians(i * 30 - 90)
-            inner_r = r - 10
-            outer_r = r - 5
-            x1 = cx + inner_r * math.cos(angle)
-            y1 = cy + inner_r * math.sin(angle)
-            x2 = cx + outer_r * math.cos(angle)
-            y2 = cy + outer_r * math.sin(angle)
+        # ── 内圈刻度线（24 刻度）──
+        painter.setPen(QPen(QColor(neon.red(), neon.green(), neon.blue(), 25), 0.8))
+        for i in range(24):
+            angle = math.radians(i * 15 - 90)
+            if i % 6 == 0:
+                inner_r2, outer_r2 = r - 12, r - 4
+            else:
+                inner_r2, outer_r2 = r - 9, r - 5
+            x1 = cx + inner_r2 * math.cos(angle)
+            y1 = cy + inner_r2 * math.sin(angle)
+            x2 = cx + outer_r2 * math.cos(angle)
+            y2 = cy + outer_r2 * math.sin(angle)
             painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
-        # ── 上传进度弧线 ──
+        # ── 上传进度弧线（4 层辉光）──
         sent_ceil = max(self._net_sent_ceiling, 1.0)
         sent_pct = min(self._anim_net_sent / sent_ceil, 1.0)
-        arc_margin = 6
+        arc_margin = 5
         arc_rect = QRectF(g + arc_margin, g + arc_margin,
                           d - arc_margin * 2, d - arc_margin * 2)
         span = int(sent_pct * 360 * 16)
 
-        for layer in range(3):
-            glow_alpha = [18, 35, 55][layer]
-            glow_w = [8, 5, 3][layer]
+        for layer in range(4):
+            glow_alpha = [12, 22, 38, 58][layer]
+            glow_w = [10, 7, 4.5, 2.5][layer]
             pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), glow_alpha), glow_w)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawArc(arc_rect, 90 * 16, -span)
 
-        pen = QPen(neon, 2.5)
+        pen = QPen(QColor(
+            min(neon.red() + 50, 255),
+            min(neon.green() + 50, 255),
+            min(neon.blue() + 50, 255)), 2)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(pen)
         painter.drawArc(arc_rect, 90 * 16, -span)
