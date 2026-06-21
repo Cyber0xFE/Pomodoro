@@ -409,7 +409,7 @@ class FloatingBall(QWidget):
         progress = max(0.0, min(self._get_snap_progress(), 1.0))
 
         # ── 1. 外层辉光（4 层，模拟球体光晕）──
-        for i, (alpha, w) in enumerate([(15, 6), (30, 4), (50, 2.5), (70, 1)]):
+        for i, (alpha, w) in enumerate([(25, 7), (42, 5), (58, 3), (75, 1.5)]):
             glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), w)
             glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(glow_pen)
@@ -477,19 +477,6 @@ class FloatingBall(QWidget):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(fill_grad))
             painter.drawRoundedRect(fill_rect, 2.5, 2.5)
-
-            # 高亮前沿线
-            highlight_alpha = 180
-            if vertical:
-                hl_y = fill_rect.top()
-                painter.setPen(QPen(QColor(255, 255, 255, highlight_alpha), 1.2))
-                painter.drawLine(QPointF(fill_rect.left() + 2, hl_y),
-                                 QPointF(fill_rect.right() - 2, hl_y))
-            else:
-                hl_x = fill_rect.right()
-                painter.setPen(QPen(QColor(255, 255, 255, highlight_alpha), 1.2))
-                painter.drawLine(QPointF(hl_x, fill_rect.top() + 2),
-                                 QPointF(hl_x, fill_rect.bottom() - 2))
 
         # ── 5. 边框 ──
         inner_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 90), 0.8)
@@ -811,8 +798,8 @@ class FloatingBall(QWidget):
         neon = QColor(self._neon)
         bg = QColor(self._bg)
 
-        # ── 1. 外层辉光（4 层，与条一致）──
-        for i, (alpha, w) in enumerate([(15, 8), (28, 6), (45, 4), (65, 2)]):
+        # ── 1. 外层辉光（4 层）──
+        for i, (alpha, w) in enumerate([(25, 9), (42, 7), (58, 4.5), (75, 2.5)]):
             glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), w)
             glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(glow_pen)
@@ -933,7 +920,7 @@ class FloatingBall(QWidget):
         bg = QColor(self._bg)
 
         # ── 外层辉光（4 层，不受翻页影响）──
-        for i, (alpha, w) in enumerate([(15, 8), (28, 6), (45, 4), (65, 2)]):
+        for i, (alpha, w) in enumerate([(25, 9), (42, 7), (58, 4.5), (75, 2.5)]):
             glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), w)
             glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(glow_pen)
