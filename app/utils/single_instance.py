@@ -3,7 +3,7 @@
 from PySide6.QtCore import QSharedMemory
 
 
-def acquire_app_lock(app_key: str = "PomodoroBall_Instance") -> QSharedMemory | None:
+def acquire_app_lock(app_key: str = "DX3906_Instance") -> QSharedMemory | None:
     """尝试获取应用单实例锁。
 
     返回 QSharedMemory 对象表示成功（调用方须保活引用），

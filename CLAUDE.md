@@ -18,14 +18,14 @@ python main.py
 python generate_icon.py
 
 # 打包为 EXE（单文件、无控制台、嵌入图标、含主题+图标数据文件）
-pyinstaller --onefile --noconsole --name "PomodoroBall" \
+pyinstaller --onefile --noconsole --name "DX3906" \
   --icon "app/assets/icons/pomodoro.ico" \
   --add-data "app/themes/presets/*.json;app/themes/presets/" \
   --add-data "app/assets/icons/pomodoro.ico;app/assets/icons/" \
   main.py
 
 # 清理构建缓存（必要时）
-rm -rf build dist PomodoroBall.spec
+rm -rf build dist DX3906.spec
 ```
 
 ## 架构

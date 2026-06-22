@@ -251,7 +251,7 @@ class PomodoroApp:
     # ── 开机启动 ──────────────────────────────────────
 
     _AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-    _AUTOSTART_NAME = "PomodoroBall"
+    _AUTOSTART_NAME = "DX3906"
 
     def _on_setting_changed(self, key: str, value):
         """设置变更回调，处理需即时生效的项."""
@@ -286,7 +286,7 @@ def main():
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
 
     app = QApplication(sys.argv)
-    app.setApplicationName("PomodoroBall")
+    app.setApplicationName("DX3906")
     app.setApplicationDisplayName("番茄钟悬浮球")
     app.setQuitOnLastWindowClosed(False)
 

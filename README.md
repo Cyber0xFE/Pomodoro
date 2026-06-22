@@ -54,14 +54,14 @@ python main.py
 python generate_icon.py
 
 # 打包
-pyinstaller --onefile --noconsole --name "PomodoroBall" \
+pyinstaller --onefile --noconsole --name "DX3906" \
   --icon "app/assets/icons/pomodoro.ico" \
   --add-data "app/themes/presets/*.json;app/themes/presets/" \
   --add-data "app/assets/icons/pomodoro.ico;app/assets/icons/" \
   main.py
 ```
 
-输出文件：`dist/PomodoroBall.exe`（约 48MB，单文件，无需安装）
+输出文件：`dist/DX3906.exe`（约 48MB，单文件，无需安装）
 
 ## 🎮 操作指南
 
