@@ -65,6 +65,8 @@ class FloatingBall(QWidget):
         self._snap_speed_text = ""
         self._snap_speed_ts = 0.0
 
+        self._center_opacity = 1.0  # 球体中心暗色填充透明度（与全窗口透明度分离）
+
         self._ball_diameter = BALL_SIZE
         glow = 20
         win_size = self._ball_diameter + glow * 2
@@ -132,7 +134,7 @@ class FloatingBall(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setMouseTracking(True)  # 启用鼠标追踪，否则不按按钮时不触发 moveEvent
-        self.setWindowOpacity(self._settings.opacity)
+        self._center_opacity = self._settings.opacity
 
     # ── 信号 ──────────────────────────────────────────
 
@@ -749,9 +751,9 @@ class FloatingBall(QWidget):
             event.ignore()
             return
         delta = OPACITY_STEP if event.angleDelta().y() > 0 else -OPACITY_STEP
-        new_opacity = max(OPACITY_MIN, min(OPACITY_MAX, self.windowOpacity() + delta))
-        self.setWindowOpacity(new_opacity)
-        self._settings.opacity = new_opacity
+        self._center_opacity = max(OPACITY_MIN, min(OPACITY_MAX, self._center_opacity + delta))
+        self._settings.opacity = self._center_opacity
+        self.update()
         event.accept()
 
     # ── 绘制 ──────────────────────────────────────────
@@ -815,7 +817,10 @@ class FloatingBall(QWidget):
         gradient.setColorAt(1.0, bg.darker(160))
         painter.setBrush(QBrush(gradient))
         painter.setPen(Qt.PenStyle.NoPen)
+        painter.save()
+        painter.setOpacity(self._center_opacity)
         painter.drawEllipse(ball_rect)
+        painter.restore()
 
         # ── 3. 内环（玻璃质感）──
         inner_ring_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 40), 1.2)
@@ -945,7 +950,10 @@ class FloatingBall(QWidget):
         gradient.setColorAt(1.0, bg.darker(160))
         painter.setBrush(QBrush(gradient))
         painter.setPen(Qt.PenStyle.NoPen)
+        painter.save()
+        painter.setOpacity(self._center_opacity)
         painter.drawEllipse(ball_rect)
+        painter.restore()
 
         # ── 内环 ──
         inner_ring_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 40), 1.2)
@@ -1294,11 +1302,12 @@ class FloatingBall(QWidget):
         self.update()
 
     def _on_flash_finished(self):
-        self.setWindowOpacity(self._settings.opacity)
+        self.setWindowOpacity(1.0)
 
     def _on_setting_changed(self, key: str, value):
         if key == "opacity":
-            self.setWindowOpacity(value)
+            self._center_opacity = value
+            self.update()
 
     def _apply_theme(self, theme: Theme | None):
         if theme is None:
