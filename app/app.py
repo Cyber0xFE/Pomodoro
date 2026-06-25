@@ -4,7 +4,7 @@ import os
 import sys
 import winreg
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon, QAction
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
@@ -66,6 +66,12 @@ class PomodoroApp:
 
         # 监听设置变更（开机启动等需要即时生效的项）
         self._settings.setting_changed.connect(self._on_setting_changed)
+
+        # 皮肤轮播定时器
+        self._theme_cycle_timer = QTimer(self._ball)
+        self._theme_cycle_timer.timeout.connect(self._on_theme_cycle_tick)
+        if self._settings.theme_cycle_enabled:
+            self._theme_cycle_timer.start(30_000)
 
         # 初始主题
         saved_theme = self._settings.theme
@@ -213,6 +219,19 @@ class PomodoroApp:
         self._theme_manager.apply(name)
         self._settings.theme = name
 
+    def _on_theme_cycle_tick(self):
+        """轮播定时器触发 — 切换到下一个皮肤."""
+        names = self._theme_manager.theme_names
+        if len(names) < 2:
+            return
+        current = self._settings.theme
+        try:
+            idx = names.index(current)
+        except ValueError:
+            idx = 0
+        next_idx = (idx + 1) % len(names)
+        self._apply_theme(names[next_idx])
+
     # ── 可见性切换 ────────────────────────────────────
 
     def _toggle_visibility(self):
@@ -257,6 +276,11 @@ class PomodoroApp:
         """设置变更回调，处理需即时生效的项."""
         if key == "auto_start":
             self._toggle_autostart(value)
+        elif key == "theme_cycle_enabled":
+            if value:
+                self._theme_cycle_timer.start(30_000)
+            else:
+                self._theme_cycle_timer.stop()
 
     def _toggle_autostart(self, enabled: bool):
         """写入或删除开机启动注册表项."""

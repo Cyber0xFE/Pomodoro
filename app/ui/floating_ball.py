@@ -1310,8 +1310,38 @@ class FloatingBall(QWidget):
             self.update()
 
     def _apply_theme(self, theme: Theme | None):
+        """应用主题 - 带窗口淡入淡出过渡."""
         if theme is None:
             return
+        # 正在过渡中 → 排队
+        if getattr(self, '_theme_fading', False):
+            self._theme_fade_queued = theme
+            return
+        self._theme_fading = True
+        self._theme_fade_target = theme
+
+        # 停止可能正在进行的闪烁动画（也操作 windowOpacity）
+        flash = getattr(self, '_flash_animation', None)
+        if flash is not None and flash.state() == QVariantAnimation.State.Running:
+            flash.stop()
+            self.setWindowOpacity(1.0)
+
+        # 淡出（整窗口）
+        fade_out = QVariantAnimation(self)
+        fade_out.setDuration(350)
+        fade_out.setEasingCurve(QEasingCurve.Type.InQuad)
+        fade_out.setStartValue(1.0)
+        fade_out.setEndValue(0.12)
+        fade_out.valueChanged.connect(self._on_theme_fade_value)
+        fade_out.finished.connect(self._on_theme_fade_mid)
+        fade_out.start(QVariantAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _on_theme_fade_value(self, v: float):
+        self.setWindowOpacity(float(v))
+
+    def _on_theme_fade_mid(self):
+        """淡出完成 → 切换颜色 → 淡入."""
+        theme: Theme = self._theme_fade_target
         self._neon = theme.colors.center
         self._bg = QColor(theme.colors.edge)
         self._fonts = theme.fonts
@@ -1319,6 +1349,25 @@ class FloatingBall(QWidget):
             total = self._timer.total
             self._display_text = _format_time(total) if total > 0 else "--:--"
         self.update()
+
+        # 淡入（整窗口）
+        fade_in = QVariantAnimation(self)
+        fade_in.setDuration(500)
+        fade_in.setEasingCurve(QEasingCurve.Type.OutCubic)
+        fade_in.setStartValue(0.12)
+        fade_in.setEndValue(1.0)
+        fade_in.valueChanged.connect(self._on_theme_fade_value)
+        fade_in.finished.connect(self._on_theme_fade_done)
+        fade_in.start(QVariantAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _on_theme_fade_done(self):
+        """淡入完成 → 恢复窗口透明度，处理排队主题."""
+        self.setWindowOpacity(1.0)
+        self._theme_fading = False
+        queued = getattr(self, '_theme_fade_queued', None)
+        self._theme_fade_queued = None
+        if queued is not None:
+            self._apply_theme(queued)
 
     def _get_state_text(self) -> str:
         state = self._timer.state

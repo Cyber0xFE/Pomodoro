@@ -34,6 +34,7 @@ DEFAULT_SETTINGS = {
     "auto_start": False,
     "startup_mode": "pomodoro",
     "snap_enabled": True,
+    "theme_cycle_enabled": False,
 }
 
 # 预设时长选项（分钟）

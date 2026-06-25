@@ -36,7 +36,7 @@ class SettingsDialog(QDialog):
         self._settings = settings
 
         self.setWindowTitle("番茄钟设置")
-        self.setFixedSize(390, 375)
+        self.setFixedSize(390, 410)
         self.setStyleSheet("font-size: 14px;")
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
@@ -94,6 +94,10 @@ class SettingsDialog(QDialog):
         self._snap_check = QCheckBox("拖拽到屏幕边缘时自动吸附隐藏")
         layout.addWidget(self._snap_check)
 
+        # ── 皮肤轮播 ──
+        self._theme_cycle_check = QCheckBox("自动轮播皮肤（每 30 秒切换一次）")
+        layout.addWidget(self._theme_cycle_check)
+
         # ── 开机启动 ──
         self._autostart_check = QCheckBox("开机自动启动")
         layout.addWidget(self._autostart_check)
@@ -149,6 +153,7 @@ class SettingsDialog(QDialog):
         self._opacity_label.setText(f"{opacity_int}%")
         self._sound_check.setChecked(self._settings.sound_enabled)
         self._snap_check.setChecked(self._settings.snap_enabled)
+        self._theme_cycle_check.setChecked(self._settings.theme_cycle_enabled)
         self._autostart_check.setChecked(self._settings.auto_start)
         idx = self._startup_mode_combo.findData(self._settings.startup_mode)
         if idx >= 0:
@@ -164,6 +169,7 @@ class SettingsDialog(QDialog):
         self._settings.opacity = self._opacity_slider.value() / 100.0
         self._settings.sound_enabled = self._sound_check.isChecked()
         self._settings.snap_enabled = self._snap_check.isChecked()
+        self._settings.theme_cycle_enabled = self._theme_cycle_check.isChecked()
         self._settings.auto_start = self._autostart_check.isChecked()
         self._settings.startup_mode = self._startup_mode_combo.currentData()
 

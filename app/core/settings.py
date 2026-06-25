@@ -151,3 +151,11 @@ class SettingsManager(QObject):
     @snap_enabled.setter
     def snap_enabled(self, value: bool):
         self.set("snap_enabled", value)
+
+    @property
+    def theme_cycle_enabled(self) -> bool:
+        return self.get("theme_cycle_enabled")
+
+    @theme_cycle_enabled.setter
+    def theme_cycle_enabled(self, value: bool):
+        self.set("theme_cycle_enabled", value)
