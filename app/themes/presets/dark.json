@@ -1,12 +1,12 @@
 {
-    "name": "Ghost White",
+    "name": "Neon Violet",
     "colors": {
-        "center": "#C0C0C0",
-        "edge": "#0A0A0A",
-        "progress_arc": "rgba(200,200,200,200)",
+        "center": "#C550F5",
+        "edge": "#0B0712",
+        "progress_arc": "rgba(197,80,245,220)",
         "text": "#ffffff",
-        "text_shadow": "rgba(160,160,160,100)",
-        "button_hover": "rgba(200,200,200,20)"
+        "text_shadow": "rgba(180,60,230,120)",
+        "button_hover": "rgba(197,80,245,25)"
     },
     "fonts": {
         "time": { "family": "Consolas", "size": 24, "bold": true },
@@ -15,7 +15,7 @@
     "ball": {
         "size": 120,
         "shadow_enabled": true,
-        "shadow_color": "rgba(200,200,200,50)",
-        "shadow_blur": 20
+        "shadow_color": "rgba(197,80,245,60)",
+        "shadow_blur": 22
     }
 }
