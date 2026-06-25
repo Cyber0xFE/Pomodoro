@@ -1346,8 +1346,8 @@ class FloatingBall(QWidget):
         self._bg = QColor(theme.colors.edge)
         self._fonts = theme.fonts
         if self._display_mode == DisplayMode.POMODORO:
-            total = self._timer.total
-            self._display_text = _format_time(total) if total > 0 else "--:--"
+            remaining = self._timer.remaining
+            self._display_text = _format_time(remaining) if remaining > 0 else "--:--"
         self.update()
 
         # 淡入（整窗口）
