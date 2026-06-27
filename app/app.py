@@ -185,8 +185,9 @@ class PomodoroApp:
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason):
         """托盘图标点击事件."""
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            # 左键单击 — 切换可见性
-            self._toggle_visibility()
+            # 左键单击 — 球隐藏时才显示，已可见则不做任何事
+            if not self._ball.isVisible():
+                self._ball.show()
         elif reason == QSystemTrayIcon.ActivationReason.Context:
             # 右键 — 已由 contextMenu 处理，这里更新菜单状态
             self._update_tray_toggle_label()
