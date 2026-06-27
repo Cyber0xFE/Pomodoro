@@ -419,7 +419,9 @@ class FloatingBall(QWidget):
             adj = 1 + i * 1.8
             painter.drawRoundedRect(bar_rect.adjusted(-adj, -adj, adj, adj), 6 + i, 6 + i)
 
-        # ── 2. 背景（深色凹陷感）──
+        # ── 2. 背景（深色凹陷感，支持半透明）──
+        painter.save()
+        painter.setOpacity(self._center_opacity)
         painter.setPen(Qt.PenStyle.NoPen)
         # 底层暗影
         painter.setBrush(QBrush(QColor(0, 0, 0, 140)))
@@ -435,6 +437,7 @@ class FloatingBall(QWidget):
         bg_grad.setColorAt(1.0, bg.lighter(110))
         painter.setBrush(QBrush(bg_grad))
         painter.drawRoundedRect(bar_rect.adjusted(1, 1, -1, -1), 3, 3)
+        painter.restore()
 
         # ── 3. 分段刻度 ──
         n_ticks = 7
