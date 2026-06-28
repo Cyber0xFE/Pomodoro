@@ -39,6 +39,18 @@ _VK_MAP = {
     **{f"f{i}": 0x6F + i for i in range(1, 13)},  # F1-F12: VK_F1=0x70..VK_F12=0x7B
     **{chr(ord("a") + i): ord("A") + i for i in range(26)},  # A-Z
     **{str(i): ord("0") + i for i in range(10)},  # 0-9
+    # 导航键
+    "up": 0x26,
+    "down": 0x28,
+    "left": 0x25,
+    "right": 0x27,
+    "home": 0x24,
+    "end": 0x23,
+    "pageup": 0x21,
+    "pagedown": 0x22,
+    # 编辑键
+    "insert": 0x2D,
+    "delete": 0x2E,
 }
 
 

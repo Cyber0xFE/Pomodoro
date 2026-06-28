@@ -43,6 +43,8 @@ class FloatingBall(QWidget):
 
     right_clicked = Signal()
     hotkey_pressed = Signal()
+    brightness_up_pressed = Signal()
+    brightness_down_pressed = Signal()
 
     def __init__(
         self,
@@ -255,13 +257,19 @@ class FloatingBall(QWidget):
         event.ignore()
 
     def nativeEvent(self, event_type: bytes, message_ptr: int) -> tuple[bool, int]:
-        """捕获 WM_HOTKEY 全局热键消息."""
+        """捕获 WM_HOTKEY 全局热键消息，根据热键 ID 分发到对应信号."""
         try:
             # PySide6 的 message_ptr 是包装类型，需先 int() 转整数再交给 ctypes
             ptr = ctypes.c_void_p(int(message_ptr))
             msg = ctypes.cast(ptr, ctypes.POINTER(MSG)).contents
             if msg.message == WM_HOTKEY:
-                self.hotkey_pressed.emit()
+                hid = msg.wParam  # 热键 ID（与注册时一致）
+                if hid == 1:
+                    self.hotkey_pressed.emit()
+                elif hid == 2:
+                    self.brightness_up_pressed.emit()
+                elif hid == 3:
+                    self.brightness_down_pressed.emit()
                 return True, 0
         except Exception:
             pass

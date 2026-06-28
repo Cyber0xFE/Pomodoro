@@ -26,6 +26,7 @@ from app.ui.context_menu import ContextMenu
 from app.ui.floating_ball import FloatingBall
 from app.ui.settings_dialog import SettingsDialog
 from app.utils.hotkey import register_hotkey, unregister_hotkey, parse_hotkey
+from app.utils.brightness import BrightnessController
 from app.utils.screen_utils import get_default_position
 from app.utils.single_instance import acquire_app_lock
 
@@ -40,6 +41,7 @@ class PomodoroApp:
         self._timer = PomodoroTimer()
         self._monitor = PerformanceMonitor()
         self._hotkey_hwnd = None
+        self._brightness = BrightnessController()
 
         # 创建悬浮球
         self._ball = FloatingBall(
@@ -63,6 +65,13 @@ class PomodoroApp:
 
         # 连接热键信号
         self._ball.hotkey_pressed.connect(self._toggle_visibility)
+        self._ball.brightness_up_pressed.connect(
+            lambda: self._adjust_brightness(+1))
+        self._ball.brightness_down_pressed.connect(
+            lambda: self._adjust_brightness(-1))
+
+        # 退出时清理亮度控制器持久化进程
+        QApplication.instance().aboutToQuit.connect(self._brightness.cleanup)
 
         # 监听设置变更（开机启动等需要即时生效的项）
         self._settings.setting_changed.connect(self._on_setting_changed)
@@ -96,7 +105,7 @@ class PomodoroApp:
         """显示悬浮球."""
         self._ball.show()
         self._tray.show()
-        self._register_hotkey()
+        self._register_hotkeys()
 
     def _restore_position(self):
         """恢复上次窗口位置，或使用默认位置."""
@@ -124,8 +133,8 @@ class PomodoroApp:
             self._timer.set_duration(new_duration)
             self._timer.reset()
             # 热键可能已修改，重新注册
-            self._unregister_hotkey()
-            self._register_hotkey()
+            self._unregister_hotkeys()
+            self._register_hotkeys()
 
     # ── 系统托盘 ──────────────────────────────────────
 
@@ -245,28 +254,65 @@ class PomodoroApp:
 
     # ── 全局热键 ──────────────────────────────────────
 
-    def _unregister_hotkey(self):
-        """注销当前全局热键."""
+    def _unregister_hotkeys(self):
+        """注销所有已注册的全局热键."""
         if self._hotkey_hwnd is not None:
-            unregister_hotkey(self._hotkey_hwnd)
+            for hid in (1, 2, 3):
+                unregister_hotkey(self._hotkey_hwnd, hotkey_id=hid)
             self._hotkey_hwnd = None
 
-    def _register_hotkey(self):
-        """注册全局热键."""
-        if not self._settings.hotkey_enabled:
-            print("[Hotkey] hotkey_enabled=false, 跳过注册")
-            return
-        hotkey_str = self._settings.hotkey
-        parsed = parse_hotkey(hotkey_str)
-        if parsed is None:
-            print(f"[Hotkey] 解析热键字符串失败: {hotkey_str!r}")
-            return
-        modifiers, vk = parsed
+    def _register_hotkeys(self):
+        """注册所有已配置的全局热键."""
         hwnd = int(self._ball.winId())
-        print(f"[Hotkey] 尝试注册热键: {hotkey_str!r}, "
-              f"HWND=0x{hwnd:X}, mod=0x{modifiers:X}, vk=0x{vk:X}")
-        if register_hotkey(hwnd, modifiers, vk):
-            self._hotkey_hwnd = hwnd
+
+        # 热键 ID=1 — 显示/隐藏
+        if self._settings.hotkey_enabled:
+            hotkey_str = self._settings.hotkey
+            parsed = parse_hotkey(hotkey_str)
+            if parsed is not None:
+                modifiers, vk = parsed
+                print(f"[Hotkey] 注册显示/隐藏热键: {hotkey_str!r}, "
+                      f"HWND=0x{hwnd:X}, mod=0x{modifiers:X}, vk=0x{vk:X}")
+                register_hotkey(hwnd, modifiers, vk, hotkey_id=1)
+            else:
+                print(f"[Hotkey] 显示/隐藏热键解析失败: {hotkey_str!r}")
+
+        # 热键 ID=2 — 亮度增加
+        if self._settings.brightness_hotkey_enabled:
+            hotkey_str = self._settings.brightness_up_hotkey
+            if hotkey_str:
+                parsed = parse_hotkey(hotkey_str)
+                if parsed is not None:
+                    modifiers, vk = parsed
+                    print(f"[Hotkey] 注册亮度增加热键: {hotkey_str!r}")
+                    register_hotkey(hwnd, modifiers, vk, hotkey_id=2)
+                else:
+                    print(f"[Hotkey] 亮度增加热键解析失败: {hotkey_str!r}")
+
+            # 热键 ID=3 — 亮度降低
+            hotkey_str = self._settings.brightness_down_hotkey
+            if hotkey_str:
+                parsed = parse_hotkey(hotkey_str)
+                if parsed is not None:
+                    modifiers, vk = parsed
+                    print(f"[Hotkey] 注册亮度降低热键: {hotkey_str!r}")
+                    register_hotkey(hwnd, modifiers, vk, hotkey_id=3)
+                else:
+                    print(f"[Hotkey] 亮度降低热键解析失败: {hotkey_str!r}")
+
+        self._hotkey_hwnd = hwnd
+
+    # ── 亮度调节 ──────────────────────────────────────
+
+    def _adjust_brightness(self, direction: int):
+        """调节屏幕亮度（方向：+1 增加 / -1 降低）。"""
+        step = self._settings.brightness_step
+        delta = direction * step
+        new_value = self._brightness.adjust_brightness(delta)
+        if new_value is not None:
+            print(f"[Brightness] 亮度调整为 {new_value}% (Δ={delta})")
+        else:
+            print("[Brightness] 亮度调节失败（显示器可能不支持 WMI 亮度控制）")
 
     # ── 开机启动 ──────────────────────────────────────
 

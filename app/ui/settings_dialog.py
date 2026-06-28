@@ -36,7 +36,7 @@ class SettingsDialog(QDialog):
         self._settings = settings
 
         self.setWindowTitle("番茄钟设置")
-        self.setFixedSize(390, 410)
+        self.setFixedSize(390, 560)
         self.setStyleSheet("font-size: 14px;")
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
@@ -126,6 +126,43 @@ class SettingsDialog(QDialog):
         hotkey_layout.addWidget(self._hotkey_edit)
         layout.addLayout(hotkey_layout)
 
+        # ── 亮度增加热键 ──
+        bup_layout = QHBoxLayout()
+        bup_label = QLabel("亮度增加热键:")
+        bup_label.setFixedWidth(130)
+        self._brightness_up_edit = _HotkeyEdit()
+        self._brightness_up_edit.setMaximumSequenceLength(1)
+        self._brightness_up_edit.setToolTip(
+            "点击后按下组合键，如 Ctrl+Alt+Up\nBackspace / Esc 可清空")
+        bup_layout.addWidget(bup_label)
+        bup_layout.addWidget(self._brightness_up_edit)
+        layout.addLayout(bup_layout)
+
+        # ── 亮度降低热键 ──
+        bdn_layout = QHBoxLayout()
+        bdn_label = QLabel("亮度降低热键:")
+        bdn_label.setFixedWidth(130)
+        self._brightness_down_edit = _HotkeyEdit()
+        self._brightness_down_edit.setMaximumSequenceLength(1)
+        self._brightness_down_edit.setToolTip(
+            "点击后按下组合键，如 Ctrl+Alt+Down\nBackspace / Esc 可清空")
+        bdn_layout.addWidget(bdn_label)
+        bdn_layout.addWidget(self._brightness_down_edit)
+        layout.addLayout(bdn_layout)
+
+        # ── 亮度步长 ──
+        step_layout = QHBoxLayout()
+        step_label = QLabel("亮度调节步长:")
+        step_label.setFixedWidth(130)
+        self._brightness_step_spin = QSpinBox()
+        self._brightness_step_spin.setRange(5, 25)
+        self._brightness_step_spin.setSuffix(" %")
+        self._brightness_step_spin.setFixedWidth(105)
+        step_layout.addWidget(step_label)
+        step_layout.addWidget(self._brightness_step_spin)
+        step_layout.addStretch()
+        layout.addLayout(step_layout)
+
         layout.addStretch()
 
         # ── 按钮 ──
@@ -159,6 +196,11 @@ class SettingsDialog(QDialog):
         if idx >= 0:
             self._startup_mode_combo.setCurrentIndex(idx)
         self._hotkey_edit.setKeySequence(QKeySequence(self._settings.hotkey))
+        self._brightness_up_edit.setKeySequence(
+            QKeySequence(self._settings.brightness_up_hotkey))
+        self._brightness_down_edit.setKeySequence(
+            QKeySequence(self._settings.brightness_down_hotkey))
+        self._brightness_step_spin.setValue(self._settings.brightness_step)
 
     def _on_save(self):
         """保存设置."""
@@ -188,5 +230,44 @@ class SettingsDialog(QDialog):
                 return
             self._settings.hotkey = hotkey_str
             self._settings.hotkey_enabled = True
+
+        # ── 保存亮度热键 ──
+        # 亮度增加热键
+        ks_up = self._brightness_up_edit.keySequence()
+        if ks_up.isEmpty():
+            self._settings.brightness_up_hotkey = ""
+        else:
+            hotkey_str = ks_up.toString(QKeySequence.SequenceFormat.PortableText)
+            if "+" not in hotkey_str:
+                QMessageBox.warning(
+                    self, "无效热键",
+                    f"亮度增加热键「{hotkey_str}」缺少修饰键"
+                    "（Ctrl/Shift/Alt/Win），\n"
+                    "请使用组合键，例如 Ctrl+Alt+Up。")
+                return
+            self._settings.brightness_up_hotkey = hotkey_str
+
+        # 亮度降低热键
+        ks_dn = self._brightness_down_edit.keySequence()
+        if ks_dn.isEmpty():
+            self._settings.brightness_down_hotkey = ""
+        else:
+            hotkey_str = ks_dn.toString(QKeySequence.SequenceFormat.PortableText)
+            if "+" not in hotkey_str:
+                QMessageBox.warning(
+                    self, "无效热键",
+                    f"亮度降低热键「{hotkey_str}」缺少修饰键"
+                    "（Ctrl/Shift/Alt/Win），\n"
+                    "请使用组合键，例如 Ctrl+Alt+Down。")
+                return
+            self._settings.brightness_down_hotkey = hotkey_str
+
+        # 至少有一个亮度热键配置才启用
+        self._settings.brightness_hotkey_enabled = bool(
+            self._settings.brightness_up_hotkey
+            or self._settings.brightness_down_hotkey)
+
+        # 亮度步长
+        self._settings.brightness_step = self._brightness_step_spin.value()
 
         self.accept()

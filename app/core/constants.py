@@ -35,6 +35,10 @@ DEFAULT_SETTINGS = {
     "startup_mode": "pomodoro",
     "snap_enabled": True,
     "theme_cycle_enabled": False,
+    "brightness_up_hotkey": "Ctrl+Alt+Up",
+    "brightness_down_hotkey": "Ctrl+Alt+Down",
+    "brightness_hotkey_enabled": True,
+    "brightness_step": 5,
 }
 
 # 预设时长选项（分钟）

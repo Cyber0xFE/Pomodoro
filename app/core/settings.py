@@ -159,3 +159,37 @@ class SettingsManager(QObject):
     @theme_cycle_enabled.setter
     def theme_cycle_enabled(self, value: bool):
         self.set("theme_cycle_enabled", value)
+
+    # ── 亮度调节热键 ──────────────────────────────────
+
+    @property
+    def brightness_up_hotkey(self) -> str:
+        return self.get("brightness_up_hotkey")
+
+    @brightness_up_hotkey.setter
+    def brightness_up_hotkey(self, value: str):
+        self.set("brightness_up_hotkey", value)
+
+    @property
+    def brightness_down_hotkey(self) -> str:
+        return self.get("brightness_down_hotkey")
+
+    @brightness_down_hotkey.setter
+    def brightness_down_hotkey(self, value: str):
+        self.set("brightness_down_hotkey", value)
+
+    @property
+    def brightness_hotkey_enabled(self) -> bool:
+        return self.get("brightness_hotkey_enabled")
+
+    @brightness_hotkey_enabled.setter
+    def brightness_hotkey_enabled(self, value: bool):
+        self.set("brightness_hotkey_enabled", value)
+
+    @property
+    def brightness_step(self) -> int:
+        return self.get("brightness_step")
+
+    @brightness_step.setter
+    def brightness_step(self, value: int):
+        self.set("brightness_step", int(value))
