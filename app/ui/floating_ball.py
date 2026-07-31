@@ -418,16 +418,7 @@ class FloatingBall(QWidget):
         bar_rect = QRectF(bar_x, bar_y, bar_w, bar_h)
         progress = max(0.0, min(self._get_snap_progress(), 1.0))
 
-        # ── 1. 外层辉光（4 层，模拟球体光晕）──
-        for i, (alpha, w) in enumerate([(25, 7), (42, 5), (58, 3), (75, 1.5)]):
-            glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), w)
-            glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-            painter.setPen(glow_pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            adj = 1 + i * 1.8
-            painter.drawRoundedRect(bar_rect.adjusted(-adj, -adj, adj, adj), 6 + i, 6 + i)
-
-        # ── 2. 背景（深色凹陷感，支持半透明）──
+        # ── 1. 背景（深色凹陷感，支持半透明）──
         painter.save()
         painter.setOpacity(self._center_opacity)
         painter.setPen(Qt.PenStyle.NoPen)
@@ -447,22 +438,7 @@ class FloatingBall(QWidget):
         painter.drawRoundedRect(bar_rect.adjusted(1, 1, -1, -1), 3, 3)
         painter.restore()
 
-        # ── 3. 分段刻度 ──
-        n_ticks = 7
-        tick_color = QColor(neon.red(), neon.green(), neon.blue(), 55)
-        painter.setPen(QPen(tick_color, 0.7))
-        if vertical:
-            for i in range(1, n_ticks + 1):
-                ty = bar_y + bar_h * i / (n_ticks + 1)
-                painter.drawLine(QPointF(bar_x - 2, ty), QPointF(bar_x + 3, ty))
-                painter.drawLine(QPointF(bar_x + bar_w - 3, ty), QPointF(bar_x + bar_w + 2, ty))
-        else:
-            for i in range(1, n_ticks + 1):
-                tx = bar_x + bar_w * i / (n_ticks + 1)
-                painter.drawLine(QPointF(tx, bar_y - 2), QPointF(tx, bar_y + 3))
-                painter.drawLine(QPointF(tx, bar_y + bar_h - 3), QPointF(tx, bar_y + bar_h + 2))
-
-        # ── 4. 进度填充（分段 + 高亮前沿）──
+        # ── 2. 进度填充（分段 + 高亮前沿）──
         if progress > 0.001:
             pad = 2
             if vertical:
@@ -491,13 +467,13 @@ class FloatingBall(QWidget):
             painter.setBrush(QBrush(fill_grad))
             painter.drawRoundedRect(fill_rect, 2.5, 2.5)
 
-        # ── 5. 边框 ──
+        # ── 3. 边框 ──
         inner_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 90), 0.8)
         painter.setPen(inner_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(bar_rect.adjusted(0.5, 0.5, -0.5, -0.5), 3.5, 3.5)
 
-        # ── 6. 光点 ──
+        # ── 4. 光点 ──
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(QColor(255, 255, 255, 60)))
         if vertical:
@@ -505,7 +481,7 @@ class FloatingBall(QWidget):
         else:
             painter.drawEllipse(QPointF(bar_rect.left() + 3, bar_rect.center().y()), 2, 2)
 
-        # ── 7. 网速文字（仅上下吸附时显示，1s 刷新，嵌入条内）──
+        # ── 5. 网速文字（仅上下吸附时显示，1s 刷新，嵌入条内）──
         if not vertical:
             def _short_speed(bps: float) -> str:
                 if bps >= 1_000_000:
