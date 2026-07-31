@@ -320,10 +320,72 @@ class FloatingBall(QWidget):
 
     # ── 屏幕边缘吸附 ──────────────────────────────
 
+    def _set_snapped_edge(self, edge: str | None):
+        """设置吸附边并持久化，供下次启动恢复."""
+        self._snapped_edge = edge
+        self._settings.snapped_edge = edge
+
+    def restore_snapped_state(self):
+        """启动时恢复上次退出前的吸附状态与吸附位置."""
+        edge = self._settings.snapped_edge
+        if edge not in ('left', 'right', 'top', 'bottom'):
+            self._snapped_edge = None
+            return
+        if not self._settings.snap_enabled:
+            # 吸附功能已关闭：不恢复吸附态，把球从屏幕外移回屏幕内
+            self._move_in_from_snapped(edge)
+            self._set_snapped_edge(None)
+        else:
+            self._snapped_edge = edge
+            self._restore_snapped_position(edge)
+
+    def _restore_snapped_position(self, edge: str):
+        """把窗口移动到该吸附边的正确吸附位置，另一轴保留上次退出的坐标."""
+        sc = QApplication.screenAt(self.frameGeometry().center())
+        if sc is None:
+            sc = QApplication.primaryScreen()
+        geo = sc.availableGeometry()
+        g = self._glow
+        d = self._ball_diameter
+        tail = TAIL_WIDTH
+        x, y = self.x(), self.y()
+        if edge == 'left':
+            x = geo.left() + tail - g - d
+        elif edge == 'right':
+            x = geo.right() - tail - g
+        elif edge == 'bottom':
+            y = geo.bottom() - tail - g
+        else:  # top
+            y = geo.top() + tail - g - d
+        self.move(x, y)
+        self._settings.window_x = x
+        self._settings.window_y = y
+
+    def _move_in_from_snapped(self, edge: str):
+        """把位于屏幕外的吸附窗口移回屏幕内完整球体位置（无动画）."""
+        sc = QApplication.screenAt(self.frameGeometry().center())
+        if sc is None:
+            sc = QApplication.primaryScreen()
+        geo = sc.availableGeometry()
+        g = self._glow
+        d = self._ball_diameter
+        x, y = self.x(), self.y()
+        if edge == 'right':
+            x = geo.right() - d - g
+        elif edge == 'left':
+            x = geo.left() - g
+        elif edge == 'bottom':
+            y = geo.bottom() - d - g
+        else:  # top
+            y = geo.top() - g
+        self.move(x, y)
+        self._settings.window_x = x
+        self._settings.window_y = y
+
     def _snap_to_edge(self):
         """拖拽释放时若球体边缘靠近屏幕边缘，则将球体藏到屏幕外，仅留 TAIL_WIDTH px 尾巴。"""
         if not self._settings.snap_enabled:
-            self._snapped_edge = None
+            self._set_snapped_edge(None)
             return
 
         ball_center = self.frameGeometry().center()
@@ -369,10 +431,10 @@ class FloatingBall(QWidget):
             self.move(target_x, target_y)
             self._settings.window_x = target_x
             self._settings.window_y = target_y
-            self._snapped_edge = snapped
+            self._set_snapped_edge(snapped)
             self.update()
         else:
-            self._snapped_edge = None
+            self._set_snapped_edge(None)
 
     # ── 吸附条进度指示 ───────────────────────────────
 
@@ -521,7 +583,7 @@ class FloatingBall(QWidget):
             # 点击悬停展开的球体 → 取消吸附态，球留在当前位置
             if self._expanded:
                 self._expanded = False
-                self._snapped_edge = None
+                self._set_snapped_edge(None)
                 self._hover_timer.stop()
                 self.update()
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
@@ -542,7 +604,7 @@ class FloatingBall(QWidget):
             if not self._did_drag:
                 self._did_drag = True
                 if self._snapped_edge is not None:
-                    self._snapped_edge = None
+                    self._set_snapped_edge(None)
                     self.update()
             new_pos = event.globalPosition().toPoint() - self._drag_offset
 

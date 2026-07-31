@@ -92,6 +92,7 @@ class PomodoroApp:
 
         # 位置
         self._restore_position()
+        self._ball.restore_snapped_state()
 
         # 系统托盘
         self._setup_tray()
@@ -108,10 +109,14 @@ class PomodoroApp:
         self._register_hotkeys()
 
     def _restore_position(self):
-        """恢复上次窗口位置，或使用默认位置."""
+        """恢复上次窗口位置，或使用默认位置.
+
+        吸附到屏幕边缘时窗口坐标可能为负（藏到屏幕外），
+        因此仅当坐标为默认哨兵值 -1（从未保存过）时才用默认位置.
+        """
         x = self._settings.window_x
         y = self._settings.window_y
-        if x < 0 or y < 0:
+        if x == -1 or y == -1:
             x, y = get_default_position(BALL_SIZE)
         self._ball.move(x, y)
 

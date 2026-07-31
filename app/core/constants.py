@@ -34,6 +34,7 @@ DEFAULT_SETTINGS = {
     "auto_start": False,
     "startup_mode": "pomodoro",
     "snap_enabled": True,
+    "snapped_edge": "",
     "theme_cycle_enabled": False,
     "brightness_up_hotkey": "Ctrl+Alt+Up",
     "brightness_down_hotkey": "Ctrl+Alt+Down",

@@ -153,6 +153,15 @@ class SettingsManager(QObject):
         self.set("snap_enabled", value)
 
     @property
+    def snapped_edge(self) -> str:
+        """上次吸附到的屏幕边 ('left'|'right'|'top'|'bottom'|'')，供启动恢复."""
+        return self.get("snapped_edge")
+
+    @snapped_edge.setter
+    def snapped_edge(self, value: str):
+        self.set("snapped_edge", value or "")
+
+    @property
     def theme_cycle_enabled(self) -> bool:
         return self.get("theme_cycle_enabled")
 
