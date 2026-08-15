@@ -529,13 +529,7 @@ class FloatingBall(QWidget):
             painter.setBrush(QBrush(fill_grad))
             painter.drawRoundedRect(fill_rect, 2.5, 2.5)
 
-        # ── 3. 边框 ──
-        inner_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 90), 0.8)
-        painter.setPen(inner_pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(bar_rect.adjusted(0.5, 0.5, -0.5, -0.5), 3.5, 3.5)
-
-        # ── 4. 光点 ──
+        # ── 3. 光点 ──
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(QColor(255, 255, 255, 60)))
         if vertical:
@@ -543,7 +537,7 @@ class FloatingBall(QWidget):
         else:
             painter.drawEllipse(QPointF(bar_rect.left() + 3, bar_rect.center().y()), 2, 2)
 
-        # ── 5. 网速文字（仅上下吸附时显示，1s 刷新，嵌入条内）──
+        # ── 4. 网速文字（仅上下吸附时显示，1s 刷新，嵌入条内）──
         if not vertical:
             def _short_speed(bps: float) -> str:
                 if bps >= 1_000_000:
