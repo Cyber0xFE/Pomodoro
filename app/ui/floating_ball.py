@@ -480,64 +480,70 @@ class FloatingBall(QWidget):
         bar_rect = QRectF(bar_x, bar_y, bar_w, bar_h)
         progress = max(0.0, min(self._get_snap_progress(), 1.0))
 
-        # ── 1. 背景（深色凹陷感，支持半透明）──
+        # ── 1. 背景胶囊（深色凹陷，支持半透明）──
+        capsule_r = min(bar_w, bar_h) / 2.0
         painter.save()
         painter.setOpacity(self._center_opacity)
         painter.setPen(Qt.PenStyle.NoPen)
-        # 底层暗影
+        # 底层柔和暗影
         painter.setBrush(QBrush(QColor(0, 0, 0, 140)))
-        painter.drawRoundedRect(bar_rect.adjusted(1, 1, -1, -1), 3, 3)
-        # 主体渐变
+        painter.drawRoundedRect(bar_rect.adjusted(1, 1, -1, -1), capsule_r, capsule_r)
+        # 主体渐变（立体胶囊）
         if vertical:
             bg_grad = QLinearGradient(0, bar_rect.top(), 0, bar_rect.bottom())
         else:
             bg_grad = QLinearGradient(bar_rect.left(), 0, bar_rect.right(), 0)
-        bg_grad.setColorAt(0.0, bg.lighter(115))
-        bg_grad.setColorAt(0.3, bg.darker(110))
-        bg_grad.setColorAt(0.7, bg.darker(130))
-        bg_grad.setColorAt(1.0, bg.lighter(110))
+        bg_grad.setColorAt(0.0, bg.lighter(120))
+        bg_grad.setColorAt(0.35, bg.darker(105))
+        bg_grad.setColorAt(0.7, bg.darker(125))
+        bg_grad.setColorAt(1.0, bg.lighter(115))
         painter.setBrush(QBrush(bg_grad))
-        painter.drawRoundedRect(bar_rect.adjusted(1, 1, -1, -1), 3, 3)
+        painter.drawRoundedRect(bar_rect.adjusted(1, 1, -1, -1), capsule_r, capsule_r)
         painter.restore()
 
-        # ── 2. 进度填充（分段 + 高亮前沿）──
+        # ── 2. 进度填充（胶囊渐变 + 前沿高亮圆头）──
         if progress > 0.001:
-            pad = 2
+            pad = 3
             if vertical:
                 fill_full = bar_h - pad * 2
-                fill_h = max(fill_full * progress, 3)
+                fill_h = max(fill_full * progress, capsule_r)
                 fill_rect = QRectF(bar_x + pad, bar_y + bar_h - pad - fill_h,
                                    bar_w - pad * 2, fill_h)
                 fill_grad = QLinearGradient(0, bar_rect.bottom(), 0, bar_rect.top())
             else:
                 fill_full = bar_w - pad * 2
-                fill_w = max(fill_full * progress, 3)
+                fill_w = max(fill_full * progress, capsule_r)
                 fill_rect = QRectF(bar_x + pad, bar_y + pad,
                                    fill_w, bar_h - pad * 2)
                 fill_grad = QLinearGradient(bar_rect.left(), 0, bar_rect.right(), 0)
 
-            fill_grad.setColorAt(0.0, QColor(neon.red() // 3, neon.green() // 3, neon.blue() // 3, 200))
+            fill_r = min(fill_rect.width(), fill_rect.height()) / 2.0
+            fill_grad.setColorAt(0.0, QColor(neon.red() // 3, neon.green() // 3, neon.blue() // 3, 210))
             fill_grad.setColorAt(0.08, QColor(
-                min(neon.red() + 100, 255),
-                min(neon.green() + 100, 255),
-                min(neon.blue() + 100, 255), 255))
-            fill_grad.setColorAt(0.3, QColor(neon.red(), neon.green(), neon.blue(), 240))
-            fill_grad.setColorAt(0.8, QColor(neon.red(), neon.green(), neon.blue(), 200))
-            fill_grad.setColorAt(1.0, QColor(neon.red() // 2, neon.green() // 2, neon.blue() // 2, 170))
+                min(neon.red() + 110, 255),
+                min(neon.green() + 110, 255),
+                min(neon.blue() + 110, 255), 255))
+            fill_grad.setColorAt(0.3, QColor(neon.red(), neon.green(), neon.blue(), 245))
+            fill_grad.setColorAt(0.78, QColor(neon.red(), neon.green(), neon.blue(), 205))
+            fill_grad.setColorAt(1.0, QColor(neon.red() // 2, neon.green() // 2, neon.blue() // 2, 175))
 
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(fill_grad))
-            painter.drawRoundedRect(fill_rect, 2.5, 2.5)
+            painter.drawRoundedRect(fill_rect, fill_r, fill_r)
 
-        # ── 3. 光点 ──
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(255, 255, 255, 60)))
-        if vertical:
-            painter.drawEllipse(QPointF(bar_rect.center().x(), bar_rect.top() + 3), 2, 2)
-        else:
-            painter.drawEllipse(QPointF(bar_rect.left() + 3, bar_rect.center().y()), 2, 2)
+            # 前沿高亮圆头（进度端点）
+            painter.setBrush(QBrush(QColor(
+                min(neon.red() + 130, 255),
+                min(neon.green() + 130, 255),
+                min(neon.blue() + 130, 255), 255)))
+            if vertical:
+                painter.drawEllipse(QPointF(fill_rect.center().x(), fill_rect.top()),
+                                    fill_r * 0.45, fill_r * 0.45)
+            else:
+                painter.drawEllipse(QPointF(fill_rect.right(), fill_rect.center().y()),
+                                    fill_r * 0.45, fill_r * 0.45)
 
-        # ── 4. 网速文字（仅上下吸附时显示，1s 刷新，嵌入条内）──
+        # ── 3. 网速文字（仅上下吸附时显示，1s 刷新，嵌入条内）──
         if not vertical:
             def _short_speed(bps: float) -> str:
                 if bps >= 1_000_000:
@@ -558,11 +564,11 @@ class FloatingBall(QWidget):
             font.setBold(True)
             painter.setFont(font)
 
-            # 文字描边（深色轮廓，在填充/背景上都可读）
-            painter.setPen(QPen(QColor(0, 0, 0, 180), 2.5))
-            painter.drawText(bar_rect, Qt.AlignmentFlag.AlignCenter, text)
+            # 柔和投影（向下偏移，保证在填充/背景上可读）
+            painter.setPen(QColor(0, 0, 0, 160))
+            painter.drawText(bar_rect.translated(0, 1), Qt.AlignmentFlag.AlignCenter, text)
             # 主文字
-            painter.setPen(QColor(255, 255, 255, 240))
+            painter.setPen(QColor(255, 255, 255, 245))
             painter.drawText(bar_rect, Qt.AlignmentFlag.AlignCenter, text)
 
     # ── 事件 ──────────────────────────────────────────
