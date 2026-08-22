@@ -531,18 +531,6 @@ class FloatingBall(QWidget):
             painter.setBrush(QBrush(fill_grad))
             painter.drawRoundedRect(fill_rect, fill_r, fill_r)
 
-            # 前沿高亮圆头（进度端点）
-            painter.setBrush(QBrush(QColor(
-                min(neon.red() + 130, 255),
-                min(neon.green() + 130, 255),
-                min(neon.blue() + 130, 255), 255)))
-            if vertical:
-                painter.drawEllipse(QPointF(fill_rect.center().x(), fill_rect.top()),
-                                    fill_r * 0.45, fill_r * 0.45)
-            else:
-                painter.drawEllipse(QPointF(fill_rect.right(), fill_rect.center().y()),
-                                    fill_r * 0.45, fill_r * 0.45)
-
         # ── 3. 网速文字（仅上下吸附时显示，1s 刷新，嵌入条内）──
         if not vertical:
             def _short_speed(bps: float) -> str:
