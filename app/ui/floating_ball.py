@@ -8,7 +8,7 @@ import winsound
 from PySide6.QtCore import QEasingCurve, Property, QPropertyAnimation, QPointF, Qt, QPoint, QRectF, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import (
     QBrush, QColor, QCursor, QFont, QFontMetrics, QMouseEvent, QPainter,
-    QPainterPath, QPen, QPolygonF, QRadialGradient, QTransform, QWheelEvent, QLinearGradient,
+    QPainterPath, QPen, QPixmap, QPolygonF, QRadialGradient, QTransform, QWheelEvent, QLinearGradient,
 )
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -119,6 +119,11 @@ class FloatingBall(QWidget):
         self._setup_window()
         self._connect_signals()
         self._apply_theme(theme_manager.current)
+
+        # 装饰层缓存（外环辉光 + 内环 + 24 刻度 + 双高光点）
+        # 主题或尺寸变更时通过 _decor_pixmap_dirty = True 触发重建
+        self._decor_pixmap: QPixmap | None = None
+        self._decor_pixmap_dirty: bool = True
 
         # 网速数据始终在后台更新，供吸附条显示
         self._monitor.start()
@@ -795,6 +800,67 @@ class FloatingBall(QWidget):
 
     # ── 绘制 ──────────────────────────────────────────
 
+    def _draw_decor(self, painter: QPainter):
+        """绘制装饰层缓存（外环辉光 + 内环 + 24 刻度 + 双高光点）。首次或主题变更时构建。"""
+        if self._decor_pixmap is None or self._decor_pixmap_dirty:
+            self._build_decor_pixmap()
+        painter.drawPixmap(0, 0, self._decor_pixmap)
+
+    def _build_decor_pixmap(self) -> QPixmap:
+        """构建装饰层：缓存不依赖动效的几何元素，每帧仅 drawPixmap 一次即可。"""
+        win = self._ball_diameter + 2 * self._glow
+        pix = QPixmap(win, win)
+        pix.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        ball_rect = QRectF(self._glow, self._glow, self._ball_diameter, self._ball_diameter)
+        cx, cy = ball_rect.center().x(), ball_rect.center().y()
+        r = self._ball_diameter / 2.0
+
+        neon = QColor(self._neon)
+
+        # ── 1. 外层辉光（4 层）──
+        for i, (alpha, w) in enumerate([(25, 9), (42, 7), (58, 4.5), (75, 2.5)]):
+            glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), w)
+            glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(glow_pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            adj = 1 + i * 2
+            p.drawEllipse(ball_rect.adjusted(-adj, -adj, adj, adj))
+
+        # ── 2. 内环 ──
+        inner_ring_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 40), 1.2)
+        p.setPen(inner_ring_pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(ball_rect.adjusted(3, 3, -3, -3))
+
+        # ── 3. 24 刻度 ──
+        p.setPen(QPen(QColor(neon.red(), neon.green(), neon.blue(), 25), 0.8))
+        for i in range(24):
+            angle = math.radians(i * 15 - 90)
+            if i % 6 == 0:
+                inner_r2, outer_r2 = r - 12, r - 4   # 整点刻度更长
+            else:
+                inner_r2, outer_r2 = r - 9, r - 5
+            x1 = cx + inner_r2 * math.cos(angle)
+            y1 = cy + inner_r2 * math.sin(angle)
+            x2 = cx + outer_r2 * math.cos(angle)
+            y2 = cy + outer_r2 * math.sin(angle)
+            p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+        # ── 4. 双高光点 ──
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(255, 255, 255, 35)))
+        p.drawEllipse(QPointF(cx - r * 0.35, cy - r * 0.4), 3.5, 3.5)
+        p.setBrush(QBrush(QColor(255, 255, 255, 20)))
+        p.drawEllipse(QPointF(cx - r * 0.15, cy - r * 0.5), 2, 2)
+
+        p.end()
+        self._decor_pixmap = pix
+        self._decor_pixmap_dirty = False
+        return pix
+
     def paintEvent(self, event):
         if not hasattr(self, "_neon") or not hasattr(self, "_display_text"):
             return
@@ -837,14 +903,8 @@ class FloatingBall(QWidget):
         neon = QColor(self._neon)
         bg = QColor(self._bg)
 
-        # ── 1. 外层辉光（4 层）──
-        for i, (alpha, w) in enumerate([(25, 9), (42, 7), (58, 4.5), (75, 2.5)]):
-            glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), w)
-            glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-            painter.setPen(glow_pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            adj = 1 + i * 2
-            painter.drawEllipse(ball_rect.adjusted(-adj, -adj, adj, adj))
+        # ── 1. 装饰层缓存（外环辉光 + 内环 + 24 刻度 + 双高光点）──
+        self._draw_decor(painter)
 
         # ── 2. 球体背景 ──
         gradient = QRadialGradient(QPointF(cx - r * 0.2, cy - r * 0.3), r * 1.15)
@@ -859,27 +919,7 @@ class FloatingBall(QWidget):
         painter.drawEllipse(ball_rect)
         painter.restore()
 
-        # ── 3. 内环（玻璃质感）──
-        inner_ring_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 40), 1.2)
-        painter.setPen(inner_ring_pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(ball_rect.adjusted(3, 3, -3, -3))
-
-        # ── 4. 内圈刻度线（24 刻度）──
-        painter.setPen(QPen(QColor(neon.red(), neon.green(), neon.blue(), 30), 0.8))
-        for i in range(24):
-            angle = math.radians(i * 15 - 90)
-            if i % 6 == 0:
-                inner_r2, outer_r2 = r - 12, r - 4   # 整点刻度更长
-            else:
-                inner_r2, outer_r2 = r - 9, r - 5
-            x1 = cx + inner_r2 * math.cos(angle)
-            y1 = cy + inner_r2 * math.sin(angle)
-            x2 = cx + outer_r2 * math.cos(angle)
-            y2 = cy + outer_r2 * math.sin(angle)
-            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
-
-        # ── 5. 进度弧线（霓虹发光）──
+        # ── 3. 进度弧线（霓虹发光）──
         if self._timer.is_running and self._timer.fraction_remaining > 0:
             arc_margin = 5
             arc_rect = QRectF(g + arc_margin, g + arc_margin,
@@ -944,13 +984,6 @@ class FloatingBall(QWidget):
         state_rect = QRectF(0, self.height() / 2 + 10, self.width(), 16)
         painter.drawText(state_rect, Qt.AlignmentFlag.AlignCenter, state_text)
 
-        # ── 8. 高光点（双点）──
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(255, 255, 255, 35)))
-        painter.drawEllipse(QPointF(cx - r * 0.35, cy - r * 0.4), 3.5, 3.5)
-        painter.setBrush(QBrush(QColor(255, 255, 255, 20)))
-        painter.drawEllipse(QPointF(cx - r * 0.15, cy - r * 0.5), 2, 2)
-
     def _paint_monitor(self, painter: QPainter):
         g = self._glow
         d = self._ball_diameter
@@ -961,14 +994,8 @@ class FloatingBall(QWidget):
         neon = QColor(self._neon)
         bg = QColor(self._bg)
 
-        # ── 外层辉光（4 层，不受翻页影响）──
-        for i, (alpha, w) in enumerate([(25, 9), (42, 7), (58, 4.5), (75, 2.5)]):
-            glow_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), w)
-            glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-            painter.setPen(glow_pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            adj = 1 + i * 2
-            painter.drawEllipse(ball_rect.adjusted(-adj, -adj, adj, adj))
+        # ── 装饰层缓存（外环辉光 + 内环 + 24 刻度 + 双高光点）──
+        self._draw_decor(painter)
 
         # ── 球心区域垂直翻页 ──
         painter.save()
@@ -991,19 +1018,6 @@ class FloatingBall(QWidget):
         painter.setOpacity(self._center_opacity)
         painter.drawEllipse(ball_rect)
         painter.restore()
-
-        # ── 内环 ──
-        inner_ring_pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), 40), 1.2)
-        painter.setPen(inner_ring_pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(ball_rect.adjusted(3, 3, -3, -3))
-
-        # ── 高光点（双点）──
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(255, 255, 255, 35)))
-        painter.drawEllipse(QPointF(cx - r * 0.35, cy - r * 0.4), 3.5, 3.5)
-        painter.setBrush(QBrush(QColor(255, 255, 255, 20)))
-        painter.drawEllipse(QPointF(cx - r * 0.15, cy - r * 0.5), 2, 2)
 
         if self._monitor_sub == "metrics":
             self._paint_monitor_metrics(painter, g, d, cx, cy, r, neon, bg, ball_rect)
@@ -1068,20 +1082,6 @@ class FloatingBall(QWidget):
                 painter.drawPath(surface_path)
 
             painter.restore()
-
-        # ── 内圈刻度线（24 刻度）──
-        painter.setPen(QPen(QColor(neon.red(), neon.green(), neon.blue(), 25), 0.8))
-        for i in range(24):
-            angle = math.radians(i * 15 - 90)
-            if i % 6 == 0:
-                inner_r2, outer_r2 = r - 12, r - 4
-            else:
-                inner_r2, outer_r2 = r - 9, r - 5
-            x1 = cx + inner_r2 * math.cos(angle)
-            y1 = cy + inner_r2 * math.sin(angle)
-            x2 = cx + outer_r2 * math.cos(angle)
-            y2 = cy + outer_r2 * math.sin(angle)
-            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
         # ── CPU 进度弧线（4 层辉光）──
         cpu_pct = self._anim_cpu / 100.0
@@ -1171,20 +1171,6 @@ class FloatingBall(QWidget):
             painter.drawRect(water_rect)
 
             painter.restore()
-
-        # ── 内圈刻度线（24 刻度）──
-        painter.setPen(QPen(QColor(neon.red(), neon.green(), neon.blue(), 25), 0.8))
-        for i in range(24):
-            angle = math.radians(i * 15 - 90)
-            if i % 6 == 0:
-                inner_r2, outer_r2 = r - 12, r - 4
-            else:
-                inner_r2, outer_r2 = r - 9, r - 5
-            x1 = cx + inner_r2 * math.cos(angle)
-            y1 = cy + inner_r2 * math.sin(angle)
-            x2 = cx + outer_r2 * math.cos(angle)
-            y2 = cy + outer_r2 * math.sin(angle)
-            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
         # ── 上传进度弧线（4 层辉光）──
         sent_ceil = max(self._net_sent_ceiling, 1.0)
@@ -1382,6 +1368,7 @@ class FloatingBall(QWidget):
         self._neon = theme.colors.center
         self._bg = QColor(theme.colors.edge)
         self._fonts = theme.fonts
+        self._decor_pixmap_dirty = True  # 主题色变更 → 下次绘制时重建装饰缓存
         if self._display_mode == DisplayMode.POMODORO:
             remaining = self._timer.remaining
             self._display_text = _format_time(remaining) if remaining > 0 else "--:--"
