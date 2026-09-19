@@ -1432,30 +1432,65 @@ class FloatingBall(QWidget):
 
             painter.restore()
 
-        # ── 上传进度弧线（4 层辉光）──
+        # ── 上传进度弧线（彗星尾特效：渐隐拖尾 + 多层头部光晕）──
         sent_ceil = max(self._net_sent_ceiling, 1.0)
         sent_pct = min(self._anim_net_sent / sent_ceil, 1.0)
         arc_margin = 5
         arc_rect = QRectF(g + arc_margin, g + arc_margin,
                           d - arc_margin * 2, d - arc_margin * 2)
-        span = int(sent_pct * 360 * 16)
+        span_deg = sent_pct * 360.0
 
-        for layer in range(4):
-            glow_alpha = [12, 22, 38, 58][layer]
-            glow_w = [10, 7, 4.5, 2.5][layer]
-            pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), glow_alpha), glow_w)
-            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawArc(arc_rect, 90 * 16, -span)
+        if span_deg > 0.5:
+            n_trail = 32
 
-        pen = QPen(QColor(
-            min(neon.red() + 50, 255),
-            min(neon.green() + 50, 255),
-            min(neon.blue() + 50, 255)), 2)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(pen)
-        painter.drawArc(arc_rect, 90 * 16, -span)
+            for layer in range(4):
+                glow_alpha_max = [14, 26, 42, 60][layer]
+                glow_w = [10, 7, 4.5, 2.5][layer]
+                for i in range(n_trail):
+                    t = (i + 1) / n_trail
+                    intensity = t ** 1.8
+                    alpha = int(glow_alpha_max * intensity)
+                    if alpha < 1:
+                        continue
+                    seg_span = span_deg / n_trail
+                    seg_start_angle = 90 - i * seg_span
+                    pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), glow_w)
+                    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                    painter.setPen(pen)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawArc(arc_rect, int(seg_start_angle * 16),
+                                    -int(seg_span * 16) - 1)
+
+            main_rgb = (min(neon.red() + 50, 255),
+                        min(neon.green() + 50, 255),
+                        min(neon.blue() + 50, 255))
+            for i in range(n_trail):
+                t = (i + 1) / n_trail
+                intensity = t ** 1.3
+                alpha = int(255 * intensity)
+                if alpha < 1:
+                    continue
+                seg_span = span_deg / n_trail
+                seg_start_angle = 90 - i * seg_span
+                pen = QPen(QColor(main_rgb[0], main_rgb[1], main_rgb[2], alpha), 2)
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawArc(arc_rect, int(seg_start_angle * 16),
+                                -int(seg_span * 16) - 1)
+
+            # 头部光晕（白核 + 中圈柔光 + 外圈大光晕）
+            head_angle_rad = math.radians(90 - span_deg)
+            head_r = r - arc_margin
+            head_x = cx + head_r * math.cos(head_angle_rad)
+            head_y = cy - head_r * math.sin(head_angle_rad)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(255, 255, 255, 50)))
+            painter.drawEllipse(QPointF(head_x, head_y), 9, 9)
+            painter.setBrush(QBrush(QColor(255, 255, 255, 140)))
+            painter.drawEllipse(QPointF(head_x, head_y), 5, 5)
+            painter.setBrush(QBrush(QColor(255, 255, 255, 245)))
+            painter.drawEllipse(QPointF(head_x, head_y), 2.5, 2.5)
 
         # ── 上下层背景图案：叠加雪佛龙(chevron)指示上传(上)/下载(下)，流速驱动流光 ──
         cw, ch = r * 0.32, r * 0.16      # 雪佛龙半宽 / 高度
