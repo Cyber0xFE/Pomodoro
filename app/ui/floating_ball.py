@@ -538,32 +538,99 @@ class FloatingBall(QWidget):
         self, painter: QPainter, bar_rect: QRectF,
         neon: QColor, progress: float, vertical: bool,
     ):
-        """垂直吸附条：保留原进度填充 + 前沿高亮."""
+        """垂直吸附条：上升彗星尾 + 头部光晕 + 内边高光 + 底部锚点."""
+        # ── 1. 背景轨道（暗淡虚线，暗示整条高度）──
+        track_x = bar_rect.center().x()
+        # 端点限制在圆头内：留出 bar_w/2 边距
+        track_y0 = bar_rect.top() + bar_rect.width() / 2
+        track_y1 = bar_rect.bottom() - bar_rect.width() / 2
+        pen_track = QPen(QColor(neon.red(), neon.green(), neon.blue(), 55), 1)
+        pen_track.setStyle(Qt.PenStyle.DashLine)
+        pen_track.setDashPattern([2, 3])
+        pen_track.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.save()
+        painter.setOpacity(self._center_opacity * 0.6)
+        painter.setPen(pen_track)
+        painter.drawLine(QPointF(track_x, track_y0), QPointF(track_x, track_y1))
+        painter.restore()
+
+        # ── 2. 内边高光（面对屏幕中心的一侧加 1px 亮线）──
+        inner_edge_x = (
+            bar_rect.right() - 1.0 if self._snapped_edge == 'left'
+            else bar_rect.left() + 0.5
+        )
+        hl_path = QPainterPath()
+        hl_path.moveTo(inner_edge_x, bar_rect.top() + bar_rect.width() / 2)
+        hl_path.lineTo(inner_edge_x, bar_rect.bottom() - bar_rect.width() / 2)
+        painter.save()
+        painter.setOpacity(self._center_opacity * 0.9)
+        painter.setPen(QPen(QColor(255, 255, 255, 45), 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(hl_path)
+        painter.restore()
+
         if progress <= 0.001:
             return
-        pad = 3
+
+        # ── 3. 上升彗星尾：从底部 stack 上升的 24 段渐隐段 ──
+        pad = 2.5
         fill_full = bar_rect.height() - pad * 2
-        fill_h = max(fill_full * progress, bar_rect.height() / 2.0 - pad)
-        fill_rect = QRectF(
-            bar_rect.x() + pad,
-            bar_rect.y() + bar_rect.height() - pad - fill_h,
-            bar_rect.width() - pad * 2,
-            fill_h,
-        )
-        fill_grad = QLinearGradient(0, bar_rect.bottom(), 0, bar_rect.top())
-        fill_r = min(fill_rect.width(), fill_rect.height()) / 2.0
-        fill_grad.setColorAt(0.0, QColor(neon.red() // 3, neon.green() // 3, neon.blue() // 3, 210))
-        fill_grad.setColorAt(0.08, QColor(
-            min(neon.red() + 110, 255),
-            min(neon.green() + 110, 255),
-            min(neon.blue() + 110, 255), 255))
-        fill_grad.setColorAt(0.3, QColor(neon.red(), neon.green(), neon.blue(), 245))
-        fill_grad.setColorAt(0.78, QColor(neon.red(), neon.green(), neon.blue(), 205))
-        fill_grad.setColorAt(1.0, QColor(neon.red() // 2, neon.green() // 2, neon.blue() // 2, 175))
+        n_trail = 24
+        # 段高（最小 2px 保证尾部也能看见）
+        seg_h = max(fill_full / n_trail, 2.0)
+        # 实际段数取 min(n_trail, progress * n_trail)
+        n_active = max(1, int(round(progress * n_trail)))
+        seg_w = bar_rect.width() - pad * 2
+
+        # 段的 Y 位置（最后一段最靠上，是头部）
+        seg_top = bar_rect.bottom() - pad - seg_h * n_active
+        seg_left = bar_rect.left() + pad
+
+        # 颜色基线
+        main_rgb = (neon.red(), neon.green(), neon.blue())
+
+        painter.save()
         painter.setOpacity(self._center_opacity)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(fill_grad))
-        painter.drawRoundedRect(fill_rect, fill_r, fill_r)
+        for i in range(n_active):
+            # i=0 是最低（最尾），i=n_active-1 是最高（头部）
+            t = (i + 1) / n_active
+            intensity = t ** 1.6
+            # 颜色：从尾端暗（半透明主题色）→ 头部亮（接近白）
+            r = min(int(main_rgb[0] + 80 * intensity), 255)
+            g = min(int(main_rgb[1] + 80 * intensity), 255)
+            b = min(int(main_rgb[2] + 80 * intensity), 255)
+            alpha = int(110 + 145 * intensity)  # 110 → 255
+            seg_y = seg_top + (n_active - 1 - i) * seg_h  # 倒序：i 越大越靠上
+            painter.setBrush(QBrush(QColor(r, g, b, alpha)))
+            painter.drawRoundedRect(
+                QRectF(seg_left, seg_y, seg_w, seg_h - 0.6),
+                (seg_h - 0.6) / 2, (seg_h - 0.6) / 2,
+            )
+        painter.restore()
+
+        # ── 4. 头部光晕（白核 + 中圈柔光 + 外圈大光晕，叠合在弧线顶端）──
+        head_y = seg_top - 0.5  # 略超过段顶，落在头部中心
+        painter.save()
+        painter.setOpacity(self._center_opacity)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(255, 255, 255, 50)))
+        painter.drawEllipse(QPointF(bar_rect.center().x(), head_y), 9, 9)
+        painter.setBrush(QBrush(QColor(255, 255, 255, 140)))
+        painter.drawEllipse(QPointF(bar_rect.center().x(), head_y), 5, 5)
+        painter.setBrush(QBrush(QColor(255, 255, 255, 245)))
+        painter.drawEllipse(QPointF(bar_rect.center().x(), head_y), 2.5, 2.5)
+        painter.restore()
+
+        # ── 5. 底部锚点（极小霓虹圆点，标记进度起点）──
+        anchor_y = bar_rect.bottom() - bar_rect.width() / 2
+        anchor_x = bar_rect.center().x()
+        painter.save()
+        painter.setOpacity(self._center_opacity * 0.85)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(neon.red(), neon.green(), neon.blue(), 200)))
+        painter.drawEllipse(QPointF(anchor_x, anchor_y), 1.6, 1.6)
+        painter.restore()
 
     def _paint_horizontal_snap_content(
         self, painter: QPainter, bar_rect: QRectF, neon: QColor, progress: float,
