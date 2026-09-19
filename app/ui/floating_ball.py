@@ -555,9 +555,12 @@ class FloatingBall(QWidget):
         painter.restore()
 
         # ── 2. 内边高光（面对屏幕中心的一侧加 1px 亮线）──
+        # 背景胶囊经 adjusted(1,1,-1,-1) 内缩，可见边界为 [left+1, right-1]。
+        # 1px 笔画覆盖 [c-0.5, c+0.5]，故 c 需再内移 0.5 才能整条落在胶囊内，
+        # 否则一半会溢到透明区（真机上表现为条外侧飘一条孤立灰线）。
         inner_edge_x = (
-            bar_rect.right() - 1.0 if self._snapped_edge == 'left'
-            else bar_rect.left() + 0.5
+            bar_rect.right() - 1.5 if self._snapped_edge == 'left'
+            else bar_rect.left() + 1.5
         )
         hl_path = QPainterPath()
         hl_path.moveTo(inner_edge_x, bar_rect.top() + bar_rect.width() / 2)
@@ -569,10 +572,20 @@ class FloatingBall(QWidget):
         painter.drawPath(hl_path)
         painter.restore()
 
+        # ── 3. 底部锚点（极小霓虹圆点，标记进度起点；0% 时也保留）──
+        anchor_y = bar_rect.bottom() - bar_rect.width() / 2
+        anchor_x = bar_rect.center().x()
+        painter.save()
+        painter.setOpacity(self._center_opacity * 0.85)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(neon.red(), neon.green(), neon.blue(), 200)))
+        painter.drawEllipse(QPointF(anchor_x, anchor_y), 1.6, 1.6)
+        painter.restore()
+
         if progress <= 0.001:
             return
 
-        # ── 3. 上升彗星尾：从底部 stack 上升的 24 段渐隐段 ──
+        # ── 4. 上升彗星尾：从底部 stack 上升的 24 段渐隐段 ──
         pad = 2.5
         fill_full = bar_rect.height() - pad * 2
         n_trail = 24
@@ -609,7 +622,7 @@ class FloatingBall(QWidget):
             )
         painter.restore()
 
-        # ── 4. 头部光晕（白核 + 中圈柔光 + 外圈大光晕，叠合在弧线顶端）──
+        # ── 5. 头部光晕（白核 + 中圈柔光 + 外圈大光晕，叠合在弧线顶端）──
         head_y = seg_top - 0.5  # 略超过段顶，落在头部中心
         painter.save()
         painter.setOpacity(self._center_opacity)
@@ -620,16 +633,6 @@ class FloatingBall(QWidget):
         painter.drawEllipse(QPointF(bar_rect.center().x(), head_y), 5, 5)
         painter.setBrush(QBrush(QColor(255, 255, 255, 245)))
         painter.drawEllipse(QPointF(bar_rect.center().x(), head_y), 2.5, 2.5)
-        painter.restore()
-
-        # ── 5. 底部锚点（极小霓虹圆点，标记进度起点）──
-        anchor_y = bar_rect.bottom() - bar_rect.width() / 2
-        anchor_x = bar_rect.center().x()
-        painter.save()
-        painter.setOpacity(self._center_opacity * 0.85)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(neon.red(), neon.green(), neon.blue(), 200)))
-        painter.drawEllipse(QPointF(anchor_x, anchor_y), 1.6, 1.6)
         painter.restore()
 
     def _paint_horizontal_snap_content(
