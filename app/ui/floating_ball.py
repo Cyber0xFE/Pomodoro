@@ -38,6 +38,28 @@ def _format_speed(bps: float) -> str:
     return f"{bps:.0f} B/s"
 
 
+def _short_speed(bps: float) -> str:
+    """吸附条用紧凑网速字符串（数值+单位）."""
+    if bps >= 1_000_000:
+        return f"{bps / 1_000_000:.1f}M"
+    elif bps >= 1_000:
+        return f"{bps / 1_000:.0f}K"
+    return f"{bps:.0f}B"
+
+
+def _split_value_unit(text: str):
+    """把 '149K' 切成 ('149', 'K')；空时返回 ('0', 'B')."""
+    if not text:
+        return "0", "B"
+    # 找到最后一个数字字符位置，其右侧为单位
+    for i in range(len(text) - 1, -1, -1):
+        if text[i] in "0123456789.":
+            if i == len(text) - 1:
+                return text, ""
+            return text[: i + 1], text[i + 1:]
+    return text, ""
+
+
 class FloatingBall(QWidget):
     """番茄钟悬浮球 — 赛博科技 HUD 风格."""
 
@@ -475,7 +497,7 @@ class FloatingBall(QWidget):
             vertical = True
         else:
             # 水平宽条（上/下吸附）：加宽加长，文字嵌入条内
-            bar_h = 26
+            bar_h = 28
             bar_w = d
             bar_center_y = (g + tail / 2) if edge == 'bottom' else (g + d - tail / 2)
             bar_y = bar_center_y - bar_h / 2
@@ -506,63 +528,263 @@ class FloatingBall(QWidget):
         painter.drawRoundedRect(bar_rect.adjusted(1, 1, -1, -1), capsule_r, capsule_r)
         painter.restore()
 
-        # ── 2. 进度填充（胶囊渐变 + 前沿高亮圆头）──
-        if progress > 0.001:
-            pad = 3
-            if vertical:
-                fill_full = bar_h - pad * 2
-                fill_h = max(fill_full * progress, capsule_r)
-                fill_rect = QRectF(bar_x + pad, bar_y + bar_h - pad - fill_h,
-                                   bar_w - pad * 2, fill_h)
-                fill_grad = QLinearGradient(0, bar_rect.bottom(), 0, bar_rect.top())
-            else:
-                fill_full = bar_w - pad * 2
-                fill_w = max(fill_full * progress, capsule_r)
-                fill_rect = QRectF(bar_x + pad, bar_y + pad,
-                                   fill_w, bar_h - pad * 2)
-                fill_grad = QLinearGradient(bar_rect.left(), 0, bar_rect.right(), 0)
-
-            fill_r = min(fill_rect.width(), fill_rect.height()) / 2.0
-            fill_grad.setColorAt(0.0, QColor(neon.red() // 3, neon.green() // 3, neon.blue() // 3, 210))
-            fill_grad.setColorAt(0.08, QColor(
-                min(neon.red() + 110, 255),
-                min(neon.green() + 110, 255),
-                min(neon.blue() + 110, 255), 255))
-            fill_grad.setColorAt(0.3, QColor(neon.red(), neon.green(), neon.blue(), 245))
-            fill_grad.setColorAt(0.78, QColor(neon.red(), neon.green(), neon.blue(), 205))
-            fill_grad.setColorAt(1.0, QColor(neon.red() // 2, neon.green() // 2, neon.blue() // 2, 175))
-
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(fill_grad))
-            painter.drawRoundedRect(fill_rect, fill_r, fill_r)
-
-        # ── 3. 网速文字（仅上下吸附时显示，1s 刷新，嵌入条内）──
+        # 仅水平条做精致美化；垂直条保持原风格
         if not vertical:
-            def _short_speed(bps: float) -> str:
-                if bps >= 1_000_000:
-                    return f"{bps / 1_000_000:.1f}M"
-                elif bps >= 1_000:
-                    return f"{bps / 1_000:.0f}K"
-                return f"{bps:.0f}B"
+            self._paint_horizontal_snap_content(painter, bar_rect, neon, progress)
+        else:
+            self._paint_vertical_snap_progress(painter, bar_rect, neon, progress, vertical)
 
-            now = time.monotonic()
-            if now - self._snap_speed_ts >= 1.0:
-                up_text = _short_speed(self._anim_net_sent)
-                dn_text = _short_speed(self._anim_net_recv)
-                self._snap_speed_text = f"▲ {up_text} ▼ {dn_text}"
-                self._snap_speed_ts = now
+    def _paint_vertical_snap_progress(
+        self, painter: QPainter, bar_rect: QRectF,
+        neon: QColor, progress: float, vertical: bool,
+    ):
+        """垂直吸附条：保留原进度填充 + 前沿高亮."""
+        if progress <= 0.001:
+            return
+        pad = 3
+        fill_full = bar_rect.height() - pad * 2
+        fill_h = max(fill_full * progress, bar_rect.height() / 2.0 - pad)
+        fill_rect = QRectF(
+            bar_rect.x() + pad,
+            bar_rect.y() + bar_rect.height() - pad - fill_h,
+            bar_rect.width() - pad * 2,
+            fill_h,
+        )
+        fill_grad = QLinearGradient(0, bar_rect.bottom(), 0, bar_rect.top())
+        fill_r = min(fill_rect.width(), fill_rect.height()) / 2.0
+        fill_grad.setColorAt(0.0, QColor(neon.red() // 3, neon.green() // 3, neon.blue() // 3, 210))
+        fill_grad.setColorAt(0.08, QColor(
+            min(neon.red() + 110, 255),
+            min(neon.green() + 110, 255),
+            min(neon.blue() + 110, 255), 255))
+        fill_grad.setColorAt(0.3, QColor(neon.red(), neon.green(), neon.blue(), 245))
+        fill_grad.setColorAt(0.78, QColor(neon.red(), neon.green(), neon.blue(), 205))
+        fill_grad.setColorAt(1.0, QColor(neon.red() // 2, neon.green() // 2, neon.blue() // 2, 175))
+        painter.setOpacity(self._center_opacity)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(fill_grad))
+        painter.drawRoundedRect(fill_rect, fill_r, fill_r)
 
-            text = self._snap_speed_text
-            font = QFont(self._fonts.state.family, 12)
-            font.setBold(True)
-            painter.setFont(font)
+    def _paint_horizontal_snap_content(
+        self, painter: QPainter, bar_rect: QRectF, neon: QColor, progress: float,
+    ):
+        """水平吸附条：底部高光进度 + 自绘箭头 + 双色数字."""
+        # ── 顶部 1px 内高光（增加立体感）──
+        hl = QColor(255, 255, 255, 38)
+        hl_path = QPainterPath()
+        hl_path.moveTo(bar_rect.left() + bar_rect.height() / 2, bar_rect.top() + 0.5)
+        hl_path.lineTo(bar_rect.right() - bar_rect.height() / 2, bar_rect.top() + 0.5)
+        painter.save()
+        painter.setOpacity(self._center_opacity * 0.9)
+        painter.setPen(QPen(hl, 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(hl_path)
+        painter.restore()
 
-            # 柔和投影（向下偏移，保证在填充/背景上可读）
-            painter.setPen(QColor(0, 0, 0, 160))
-            painter.drawText(bar_rect.translated(0, 1), Qt.AlignmentFlag.AlignCenter, text)
-            # 主文字
-            painter.setPen(QColor(255, 255, 255, 245))
-            painter.drawText(bar_rect, Qt.AlignmentFlag.AlignCenter, text)
+        # ── 底部进度细高光条（不再覆盖文字区域）──
+        if progress > 0.001:
+            self._paint_snap_bottom_progress(painter, bar_rect, neon, progress)
+
+        # ── 网速文字 + 自绘箭头 ──
+        self._paint_snap_speed_text(painter, bar_rect, neon)
+
+    def _paint_snap_bottom_progress(
+        self, painter: QPainter, bar_rect: QRectF, neon: QColor, progress: float,
+    ):
+        """在吸附条底部绘制 4px 高的细高光进度条，带前沿柔光."""
+        track_h = 4.0
+        pad_x = bar_rect.height() / 2 + 2  # 缩进到圆弧内（多留 2px）
+        track_y = bar_rect.bottom() - track_h - 1.5
+        track_rect = QRectF(
+            bar_rect.left() + pad_x,
+            track_y,
+            bar_rect.width() - pad_x * 2,
+            track_h,
+        )
+        # 背景轨道（极暗）
+        painter.save()
+        painter.setOpacity(self._center_opacity * 0.7)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(0, 0, 0, 120)))
+        painter.drawRoundedRect(track_rect, track_h / 2, track_h / 2)
+        painter.restore()
+
+        # 进度填充
+        fill_w = max(track_rect.width() * progress, track_h)
+        fill_rect = QRectF(track_rect.x(), track_rect.y(), fill_w, track_h)
+        # 渐变：尾部稍暗 → 前沿最亮
+        grad = QLinearGradient(fill_rect.left(), 0, fill_rect.right(), 0)
+        grad.setColorAt(0.0, QColor(neon.red() // 2, neon.green() // 2, neon.blue() // 2, 200))
+        grad.setColorAt(0.5, QColor(neon.red(), neon.green(), neon.blue(), 240))
+        grad.setColorAt(1.0, QColor(
+            min(neon.red() + 80, 255),
+            min(neon.green() + 80, 255),
+            min(neon.blue() + 80, 255),
+            255,
+        ))
+
+        painter.save()
+        painter.setOpacity(self._center_opacity)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(grad))
+        painter.drawRoundedRect(fill_rect, track_h / 2, track_h / 2)
+        # 前沿柔光圆点（仅 progress > 0 时）
+        if progress > 0.02:
+            head_x = fill_rect.right()
+            head_y = fill_rect.center().y()
+            head_color = QColor(
+                min(neon.red() + 100, 255),
+                min(neon.green() + 100, 255),
+                min(neon.blue() + 100, 255),
+                200,
+            )
+            rg = QRadialGradient(QPointF(head_x, head_y), track_h * 2.2)
+            rg.setColorAt(0.0, head_color)
+            rg.setColorAt(1.0, QColor(neon.red(), neon.green(), neon.blue(), 0))
+            painter.setBrush(QBrush(rg))
+            painter.drawEllipse(QPointF(head_x, head_y), track_h * 2.2, track_h * 2.2)
+        painter.restore()
+
+    def _paint_snap_speed_text(
+        self, painter: QPainter, bar_rect: QRectF, neon: QColor,
+    ):
+        """绘制吸附条中央的「▲ 值单位  ▼ 值单位」单行文本 + 自绘箭头."""
+        # 节流 1s 刷新
+        now = time.monotonic()
+        if now - self._snap_speed_ts >= 1.0:
+            self._snap_speed_text = (
+                f"{_short_speed(self._anim_net_sent)}|"
+                f"{_short_speed(self._anim_net_recv)}"
+            )
+            self._snap_speed_ts = now
+        cached = self._snap_speed_text.split("|") if self._snap_speed_text else ["0B", "0B"]
+        up_text, dn_text = cached[0], cached[1]
+
+        # 字体：等宽数字
+        font = QFont(self._fonts.state.family, 12)
+        font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        fm = QFontMetrics(font)
+        up_val, up_unit = _split_value_unit(up_text)
+        dn_val, dn_unit = _split_value_unit(dn_text)
+
+        # ── 测量各段宽度 ──
+        arrow_h = 9.0
+        arrow_w = 9.0
+        gap_val_arrow = 3.0
+        gap_arrow_unit = 2.0
+        gap_up_dn = 14.0
+        # up 行 = val + gap + arrow + gap + unit
+        up_block_w = (
+            fm.horizontalAdvance(up_val)
+            + gap_val_arrow + arrow_w
+            + gap_arrow_unit + fm.horizontalAdvance(up_unit)
+        )
+        dn_block_w = (
+            fm.horizontalAdvance(dn_val)
+            + gap_val_arrow + arrow_w
+            + gap_arrow_unit + fm.horizontalAdvance(dn_unit)
+        )
+        total_w = up_block_w + gap_up_dn + dn_block_w
+
+        # 居中起点
+        cx = bar_rect.center().x()
+        text_y_base = bar_rect.center().y() + (fm.ascent() - fm.descent()) / 2 - 1
+        start_x = cx - total_w / 2.0
+
+        # ── 上行：val + ▲ + unit ──
+        x_up_val = start_x
+        x_up_arrow = x_up_val + fm.horizontalAdvance(up_val) + gap_val_arrow
+        x_up_unit = x_up_arrow + arrow_w + gap_arrow_unit
+
+        # ── 下行：val + ▼ + unit ──
+        x_dn_val = x_up_unit + fm.horizontalAdvance(up_unit) + gap_up_dn
+        x_dn_arrow = x_dn_val + fm.horizontalAdvance(dn_val) + gap_val_arrow
+        x_dn_unit = x_dn_arrow + arrow_w + gap_arrow_unit
+
+        # 上行箭头垂直中心略高于文字基线（视觉对齐文字中心）
+        arrow_y = text_y_base - fm.ascent() / 2 - arrow_h / 2 + 1
+
+        painter.save()
+        painter.setOpacity(self._center_opacity)
+        painter.setFont(font)
+
+        # ── 阴影层（半透明 + 1px 偏移）──
+        shadow = QColor(0, 0, 0, 90)
+        painter.setPen(shadow)
+        painter.drawText(QPointF(x_up_val, text_y_base + 1), up_val)
+        painter.drawText(QPointF(x_dn_val, text_y_base + 1), dn_val)
+        painter.drawText(QPointF(x_up_unit, text_y_base + 1), up_unit)
+        painter.drawText(QPointF(x_dn_unit, text_y_base + 1), dn_unit)
+
+        # ── 数字层（亮白）──
+        painter.setPen(QColor(255, 255, 255, 245))
+        painter.drawText(QPointF(x_up_val, text_y_base), up_val)
+        painter.drawText(QPointF(x_dn_val, text_y_base), dn_val)
+
+        # ── 单位层（主题色淡化版，上传偏暖、下载偏冷）──
+        unit_up_color = QColor(
+            min(neon.red() + 30, 255),
+            max(neon.green() - 10, 60),
+            max(neon.blue(), 60),
+            215,
+        )
+        unit_dn_color = QColor(
+            max(neon.red() - 10, 60),
+            min(neon.green() + 30, 255),
+            min(neon.blue() + 30, 255),
+            215,
+        )
+        painter.setPen(unit_up_color)
+        painter.drawText(QPointF(x_up_unit, text_y_base), up_unit)
+        painter.setPen(unit_dn_color)
+        painter.drawText(QPointF(x_dn_unit, text_y_base), dn_unit)
+
+        # ── 自绘箭头（▲ / ▼）──
+        self._draw_arrow(
+            painter, QPointF(x_up_arrow, arrow_y),
+            arrow_w, arrow_h, up=True, color=neon, alpha=235,
+        )
+        self._draw_arrow(
+            painter, QPointF(x_dn_arrow, arrow_y),
+            arrow_w, arrow_h, up=False, color=neon, alpha=235,
+        )
+
+        # ── 中央细分隔点（▲/▼ 之间的装饰）──
+        sep_x = (x_up_unit + fm.horizontalAdvance(up_unit) + x_dn_val) / 2.0
+        sep_y = bar_rect.center().y()
+        sep_color = QColor(neon.red(), neon.green(), neon.blue(), 120)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(sep_color))
+        painter.drawEllipse(QPointF(sep_x, sep_y), 1.1, 1.1)
+        painter.restore()
+
+    def _draw_arrow(
+        self, painter: QPainter, top_left: QPointF,
+        w: float, h: float, up: bool, color: QColor, alpha: int,
+    ):
+        """在矩形区域内绘制小型 ▲ 或 ▼ 实心箭头（base 收窄，尖锐)."""
+        painter.save()
+        col = QColor(color.red(), color.green(), color.blue(), alpha)
+        inset = w * 0.18
+        if up:
+            p1 = QPointF(top_left.x() + w / 2, top_left.y())                  # tip
+            p2 = QPointF(top_left.x() + inset, top_left.y() + h)              # base-left
+            p3 = QPointF(top_left.x() + w - inset, top_left.y() + h)          # base-right
+        else:
+            p1 = QPointF(top_left.x() + w / 2, top_left.y() + h)              # tip (bottom)
+            p2 = QPointF(top_left.x() + inset, top_left.y())                  # base-top-left
+            p3 = QPointF(top_left.x() + w - inset, top_left.y())              # base-top-right
+
+        path = QPainterPath()
+        path.moveTo(p1)
+        path.lineTo(p2)
+        path.lineTo(p3)
+        path.closeSubpath()
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(col))
+        painter.drawPath(path)
+        painter.restore()
 
     # ── 事件 ──────────────────────────────────────────
 
