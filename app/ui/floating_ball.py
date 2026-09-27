@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 from app.core.constants import (
     BALL_SIZE, OPACITY_MIN, OPACITY_MAX, OPACITY_STEP,
     TimerState, DisplayMode, ANIM_FRAME_MS, ANIM_SMOOTHING,
-    SNAP_THRESHOLD, TAIL_WIDTH, BAR_WIDTH,
+    SNAP_THRESHOLD, TAIL_WIDTH, BAR_WIDTH, SNAP_CHAMFER,
 )
 from app.core.timer import PomodoroTimer
 from app.core.settings import SettingsManager
@@ -475,6 +475,41 @@ class FloatingBall(QWidget):
         else:
             return self._timer.fraction_remaining
 
+    def _snap_bar_path(self, rect: QRectF, vertical: bool) -> QPainterPath:
+        """吸附条外轮廓。
+
+        水平条（上/下吸附）为斜切光带：朝屏幕内的一侧两角 45° 斜切，
+        使条在屏幕上总是「靠屏幕边宽、朝屏幕内收口」。
+        垂直条（左/右吸附）保持圆角胶囊。
+        """
+        path = QPainterPath()
+        if vertical:
+            r = min(rect.width(), rect.height()) / 2.0
+            path.addRoundedRect(rect, r, r)
+            return path
+
+        c = SNAP_CHAMFER
+        left, right = rect.left(), rect.right()
+        top, bottom = rect.top(), rect.bottom()
+        if self._snapped_edge == 'bottom':
+            # 屏幕边在下：顶部两角斜切
+            path.moveTo(left + c, top)
+            path.lineTo(right - c, top)
+            path.lineTo(right, top + c)
+            path.lineTo(right, bottom)
+            path.lineTo(left, bottom)
+            path.lineTo(left, top + c)
+        else:
+            # 屏幕边在上：底部两角斜切
+            path.moveTo(left, top)
+            path.lineTo(right, top)
+            path.lineTo(right, bottom - c)
+            path.lineTo(right - c, bottom)
+            path.lineTo(left + c, bottom)
+            path.lineTo(left, bottom - c)
+        path.closeSubpath()
+        return path
+
     def _paint_snapped_bar(self, painter: QPainter):
         """吸附态绘制 — 赛博 HUD 风格进度指示器."""
         g = self._glow
@@ -507,15 +542,15 @@ class FloatingBall(QWidget):
         bar_rect = QRectF(bar_x, bar_y, bar_w, bar_h)
         progress = max(0.0, min(self._get_snap_progress(), 1.0))
 
-        # ── 1. 背景胶囊（深色凹陷，支持半透明）──
-        capsule_r = min(bar_w, bar_h) / 2.0
+        # ── 1. 背景（深色凹陷，支持半透明）──
+        bar_path = self._snap_bar_path(bar_rect.adjusted(1, 1, -1, -1), vertical)
         painter.save()
         painter.setOpacity(self._center_opacity)
         painter.setPen(Qt.PenStyle.NoPen)
         # 底层柔和暗影
         painter.setBrush(QBrush(QColor(0, 0, 0, 140)))
-        painter.drawRoundedRect(bar_rect.adjusted(1, 1, -1, -1), capsule_r, capsule_r)
-        # 主体渐变（立体胶囊）
+        painter.drawPath(bar_path)
+        # 主体渐变（立体）
         if vertical:
             bg_grad = QLinearGradient(0, bar_rect.top(), 0, bar_rect.bottom())
         else:
@@ -525,7 +560,7 @@ class FloatingBall(QWidget):
         bg_grad.setColorAt(0.7, bg.darker(125))
         bg_grad.setColorAt(1.0, bg.lighter(115))
         painter.setBrush(QBrush(bg_grad))
-        painter.drawRoundedRect(bar_rect.adjusted(1, 1, -1, -1), capsule_r, capsule_r)
+        painter.drawPath(bar_path)
         painter.restore()
 
         # 仅水平条做精致美化；垂直条保持原风格
@@ -775,7 +810,8 @@ class FloatingBall(QWidget):
         arrow_y = text_y_base - fm.ascent() / 2 - arrow_h / 2 + 1
 
         painter.save()
-        painter.setOpacity(self._center_opacity)
+        # 文字始终完全不透明，不随球体透明度设置变淡
+        painter.setOpacity(1.0)
         painter.setFont(font)
 
         # ── 阴影层（半透明 + 1px 偏移）──
@@ -787,7 +823,7 @@ class FloatingBall(QWidget):
         painter.drawText(QPointF(x_dn_unit, text_y_base + 1), dn_unit)
 
         # ── 数字层（亮白）──
-        painter.setPen(QColor(255, 255, 255, 245))
+        painter.setPen(QColor(255, 255, 255))
         painter.drawText(QPointF(x_up_val, text_y_base), up_val)
         painter.drawText(QPointF(x_dn_val, text_y_base), dn_val)
 
@@ -796,13 +832,11 @@ class FloatingBall(QWidget):
             min(neon.red() + 30, 255),
             max(neon.green() - 10, 60),
             max(neon.blue(), 60),
-            215,
         )
         unit_dn_color = QColor(
             max(neon.red() - 10, 60),
             min(neon.green() + 30, 255),
             min(neon.blue() + 30, 255),
-            215,
         )
         painter.setPen(unit_up_color)
         painter.drawText(QPointF(x_up_unit, text_y_base), up_unit)
@@ -812,17 +846,17 @@ class FloatingBall(QWidget):
         # ── 自绘箭头（▲ / ▼）──
         self._draw_arrow(
             painter, QPointF(x_up_arrow, arrow_y),
-            arrow_w, arrow_h, up=True, color=neon, alpha=235,
+            arrow_w, arrow_h, up=True, color=neon, alpha=255,
         )
         self._draw_arrow(
             painter, QPointF(x_dn_arrow, arrow_y),
-            arrow_w, arrow_h, up=False, color=neon, alpha=235,
+            arrow_w, arrow_h, up=False, color=neon, alpha=255,
         )
 
         # ── 中央细分隔点（▲/▼ 之间的装饰）──
         sep_x = (x_up_unit + fm.horizontalAdvance(up_unit) + x_dn_val) / 2.0
         sep_y = bar_rect.center().y()
-        sep_color = QColor(neon.red(), neon.green(), neon.blue(), 120)
+        sep_color = QColor(neon.red(), neon.green(), neon.blue())
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(sep_color))
         painter.drawEllipse(QPointF(sep_x, sep_y), 1.1, 1.1)

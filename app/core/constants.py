@@ -60,3 +60,5 @@ SNAP_THRESHOLD = 30
 TAIL_WIDTH = 20
 # 吸附条自身宽度（像素）
 BAR_WIDTH = 10
+# 水平吸附条斜切角尺寸（像素，45°）
+SNAP_CHAMFER = 8
