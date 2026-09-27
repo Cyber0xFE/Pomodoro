@@ -40,6 +40,7 @@ DEFAULT_SETTINGS = {
     "brightness_down_hotkey": "Ctrl+Alt+Down",
     "brightness_hotkey_enabled": True,
     "brightness_step": 5,
+    "monitor_refresh_ms": 1000,
 }
 
 # 预设时长选项（分钟）
@@ -53,6 +54,11 @@ OPACITY_STEP = 0.05
 # 性能监控动画参数
 ANIM_FRAME_MS = 33       # 动画帧间隔 ~30fps
 ANIM_SMOOTHING = 0.20     # EMA 平滑系数
+
+# 性能监控刷新间隔范围（毫秒）
+MONITOR_REFRESH_MIN_MS = 200
+MONITOR_REFRESH_MAX_MS = 5000
+MONITOR_REFRESH_STEP_MS = 100
 
 # 屏幕边缘吸附阈值（像素）
 SNAP_THRESHOLD = 30

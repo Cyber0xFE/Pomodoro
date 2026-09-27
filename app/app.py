@@ -40,6 +40,7 @@ class PomodoroApp:
         self._theme_manager = ThemeManager()
         self._timer = PomodoroTimer()
         self._monitor = PerformanceMonitor()
+        self._monitor.set_interval(self._settings.monitor_refresh_ms)
         self._hotkey_hwnd = None
         self._brightness = BrightnessController()
 
@@ -333,6 +334,8 @@ class PomodoroApp:
                 self._theme_cycle_timer.start(30_000)
             else:
                 self._theme_cycle_timer.stop()
+        elif key == "monitor_refresh_ms":
+            self._monitor.set_interval(value)
 
     def _toggle_autostart(self, enabled: bool):
         """写入或删除开机启动注册表项."""

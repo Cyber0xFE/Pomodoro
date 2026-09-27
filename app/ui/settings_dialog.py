@@ -8,7 +8,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.core.constants import OPACITY_MIN, OPACITY_MAX
+from app.core.constants import (
+    MONITOR_REFRESH_MAX_MS, MONITOR_REFRESH_MIN_MS, MONITOR_REFRESH_STEP_MS,
+    OPACITY_MIN, OPACITY_MAX,
+)
 from app.core.settings import SettingsManager
 
 
@@ -36,7 +39,7 @@ class SettingsDialog(QDialog):
         self._settings = settings
 
         self.setWindowTitle("番茄钟设置")
-        self.setFixedSize(390, 560)
+        self.setFixedSize(390, 600)
         self.setStyleSheet("font-size: 14px;")
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
@@ -113,6 +116,24 @@ class SettingsDialog(QDialog):
         mode_layout.addWidget(self._startup_mode_combo)
         mode_layout.addStretch()
         layout.addLayout(mode_layout)
+
+        # ── 监控刷新间隔 ──
+        refresh_layout = QHBoxLayout()
+        refresh_label = QLabel("监控刷新间隔:")
+        refresh_label.setFixedWidth(130)
+        self._refresh_spin = QSpinBox()
+        self._refresh_spin.setRange(MONITOR_REFRESH_MIN_MS, MONITOR_REFRESH_MAX_MS)
+        self._refresh_spin.setSingleStep(MONITOR_REFRESH_STEP_MS)
+        self._refresh_spin.setSuffix(" 毫秒")
+        self._refresh_spin.setFixedWidth(105)
+        self._refresh_spin.setToolTip(
+            "CPU / 内存 / 网速共用此刷新间隔\n"
+            f"范围 {MONITOR_REFRESH_MIN_MS}~{MONITOR_REFRESH_MAX_MS} 毫秒，"
+            "越小越实时、开销略高")
+        refresh_layout.addWidget(refresh_label)
+        refresh_layout.addWidget(self._refresh_spin)
+        refresh_layout.addStretch()
+        layout.addLayout(refresh_layout)
 
         # ── 全局热键 ──
         hotkey_layout = QHBoxLayout()
@@ -201,6 +222,7 @@ class SettingsDialog(QDialog):
         self._brightness_down_edit.setKeySequence(
             QKeySequence(self._settings.brightness_down_hotkey))
         self._brightness_step_spin.setValue(self._settings.brightness_step)
+        self._refresh_spin.setValue(self._settings.monitor_refresh_ms)
 
     def _on_save(self):
         """保存设置."""
@@ -269,5 +291,8 @@ class SettingsDialog(QDialog):
 
         # 亮度步长
         self._settings.brightness_step = self._brightness_step_spin.value()
+
+        # 监控刷新间隔
+        self._settings.monitor_refresh_ms = self._refresh_spin.value()
 
         self.accept()

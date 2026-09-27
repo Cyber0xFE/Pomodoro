@@ -88,6 +88,8 @@ class FloatingBall(QWidget):
         self._expanded = False     # 悬停时临时展开为完整球体
         self._snap_speed_text = ""
         self._snap_speed_ts = 0.0
+        # 吸附条网速文字刷新节流（秒），跟随监控刷新间隔
+        self._net_refresh_s = self._settings.monitor_refresh_ms / 1000.0
 
         self._center_opacity = 1.0  # 球体中心暗色填充透明度（与全窗口透明度分离）
 
@@ -754,9 +756,9 @@ class FloatingBall(QWidget):
         self, painter: QPainter, bar_rect: QRectF, neon: QColor,
     ):
         """绘制吸附条中央的「▲ 值单位  ▼ 值单位」单行文本 + 自绘箭头."""
-        # 节流 1s 刷新
+        # 节流刷新（跟随「监控刷新间隔」设置）
         now = time.monotonic()
-        if now - self._snap_speed_ts >= 1.0:
+        if now - self._snap_speed_ts >= self._net_refresh_s:
             self._snap_speed_text = (
                 f"{_short_speed(self._anim_net_sent)}|"
                 f"{_short_speed(self._anim_net_recv)}"
@@ -1730,6 +1732,8 @@ class FloatingBall(QWidget):
         if key == "opacity":
             self._center_opacity = value
             self.update()
+        elif key == "monitor_refresh_ms":
+            self._net_refresh_s = value / 1000.0
 
     def _apply_theme(self, theme: Theme | None):
         """应用主题 - 带窗口淡入淡出过渡."""

@@ -202,3 +202,11 @@ class SettingsManager(QObject):
     @brightness_step.setter
     def brightness_step(self, value: int):
         self.set("brightness_step", int(value))
+
+    @property
+    def monitor_refresh_ms(self) -> int:
+        return self.get("monitor_refresh_ms")
+
+    @monitor_refresh_ms.setter
+    def monitor_refresh_ms(self, value: int):
+        self.set("monitor_refresh_ms", int(value))

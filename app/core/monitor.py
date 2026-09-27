@@ -41,6 +41,14 @@ class PerformanceMonitor(QObject):
     def stop(self):
         self._timer.stop()
 
+    def set_interval(self, ms: int):
+        """设置轮询间隔（毫秒）.
+
+        CPU / 内存 / 网速共用此定时器；网速按实际经过时间求商，
+        因此间隔变更不影响速率计算，仅改变数据更新频率.
+        """
+        self._timer.setInterval(int(ms))
+
     def _poll(self):
         import psutil
 
