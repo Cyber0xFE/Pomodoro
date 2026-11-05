@@ -41,6 +41,7 @@ DEFAULT_SETTINGS = {
     "brightness_hotkey_enabled": True,
     "brightness_step": 5,
     "monitor_refresh_ms": 1000,
+    "taskbar_monitor_enabled": True,
 }
 
 # 预设时长选项（分钟）

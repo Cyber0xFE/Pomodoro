@@ -101,6 +101,12 @@ class SettingsDialog(QDialog):
         self._theme_cycle_check = QCheckBox("自动轮播皮肤（每 30 秒切换一次）")
         layout.addWidget(self._theme_cycle_check)
 
+        # ── 任务栏监控 ──
+        self._taskbar_check = QCheckBox("在任务栏内嵌显示性能监控")
+        self._taskbar_check.setToolTip(
+            "在任务栏图标左侧的空白区域显示 CPU / 内存 / 网速进度条")
+        layout.addWidget(self._taskbar_check)
+
         # ── 开机启动 ──
         self._autostart_check = QCheckBox("开机自动启动")
         layout.addWidget(self._autostart_check)
@@ -212,6 +218,7 @@ class SettingsDialog(QDialog):
         self._sound_check.setChecked(self._settings.sound_enabled)
         self._snap_check.setChecked(self._settings.snap_enabled)
         self._theme_cycle_check.setChecked(self._settings.theme_cycle_enabled)
+        self._taskbar_check.setChecked(self._settings.taskbar_monitor_enabled)
         self._autostart_check.setChecked(self._settings.auto_start)
         idx = self._startup_mode_combo.findData(self._settings.startup_mode)
         if idx >= 0:
@@ -234,6 +241,7 @@ class SettingsDialog(QDialog):
         self._settings.sound_enabled = self._sound_check.isChecked()
         self._settings.snap_enabled = self._snap_check.isChecked()
         self._settings.theme_cycle_enabled = self._theme_cycle_check.isChecked()
+        self._settings.taskbar_monitor_enabled = self._taskbar_check.isChecked()
         self._settings.auto_start = self._autostart_check.isChecked()
         self._settings.startup_mode = self._startup_mode_combo.currentData()
 

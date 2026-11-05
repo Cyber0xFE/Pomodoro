@@ -25,6 +25,7 @@ from app.themes.theme_manager import ThemeManager
 from app.ui.context_menu import ContextMenu
 from app.ui.floating_ball import FloatingBall
 from app.ui.settings_dialog import SettingsDialog
+from app.ui.taskbar_monitor import TaskbarMonitor
 from app.utils.hotkey import register_hotkey, unregister_hotkey, parse_hotkey
 from app.utils.brightness import BrightnessController
 from app.utils.screen_utils import get_default_position
@@ -59,6 +60,14 @@ class PomodoroApp:
             theme_manager=self._theme_manager,
             on_adjust_opacity=self._open_settings,
             on_switch_mode=self._switch_display_mode,
+        )
+
+        # 创建任务栏监控窗口
+        self._taskbar_monitor = TaskbarMonitor(
+            monitor=self._monitor,
+            settings=self._settings,
+            theme_manager=self._theme_manager,
+            on_open_settings=self._open_settings,
         )
 
         # 连接右键信号
@@ -108,6 +117,8 @@ class PomodoroApp:
         self._ball.show()
         self._tray.show()
         self._register_hotkeys()
+        if self._settings.taskbar_monitor_enabled:
+            self._taskbar_monitor.show()
 
     def _restore_position(self):
         """恢复上次窗口位置，或使用默认位置.
@@ -164,6 +175,15 @@ class PomodoroApp:
         self._tray_mode_action.triggered.connect(self._on_tray_switch_mode)
         self._tray_menu.addAction(self._tray_mode_action)
 
+        # 任务栏监控开关
+        self._tray_taskbar_action = QAction("任务栏监控", self._tray_menu)
+        self._tray_taskbar_action.setCheckable(True)
+        self._tray_taskbar_action.setChecked(
+            self._settings.taskbar_monitor_enabled)
+        self._tray_taskbar_action.triggered.connect(
+            self._on_toggle_taskbar_monitor)
+        self._tray_menu.addAction(self._tray_taskbar_action)
+
         self._tray_menu.addSeparator()
 
         # 设置时长子菜单
@@ -206,6 +226,10 @@ class PomodoroApp:
         elif reason == QSystemTrayIcon.ActivationReason.Context:
             # 右键 — 已由 contextMenu 处理，这里更新菜单状态
             self._update_tray_toggle_label()
+
+    def _on_toggle_taskbar_monitor(self, checked: bool):
+        """托盘菜单 — 开启/关闭任务栏监控."""
+        self._settings.taskbar_monitor_enabled = checked
 
     def _on_tray_switch_mode(self):
         """托盘菜单 — 切换显示模式."""
@@ -336,6 +360,13 @@ class PomodoroApp:
                 self._theme_cycle_timer.stop()
         elif key == "monitor_refresh_ms":
             self._monitor.set_interval(value)
+        elif key == "taskbar_monitor_enabled":
+            if value:
+                self._taskbar_monitor.show()
+                self._tray_taskbar_action.setChecked(True)
+            else:
+                self._taskbar_monitor.hide()
+                self._tray_taskbar_action.setChecked(False)
 
     def _toggle_autostart(self, enabled: bool):
         """写入或删除开机启动注册表项."""

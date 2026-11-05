@@ -77,6 +77,12 @@ class ContextMenu(QMenu):
             action = theme_menu.addAction(name)
             action.triggered.connect(self._make_theme_handler(name))
 
+        # ── 任务栏监控开关 ──
+        taskbar_action = self.addAction("🖥 任务栏监控")
+        taskbar_action.setCheckable(True)
+        taskbar_action.setChecked(self._settings.taskbar_monitor_enabled)
+        taskbar_action.triggered.connect(self._on_toggle_taskbar_monitor)
+
         self.addSeparator()
 
         # ── 设置 ──
@@ -112,6 +118,10 @@ class ContextMenu(QMenu):
     def _on_open_settings(self):
         if self._on_adjust_opacity:
             self._on_adjust_opacity()
+
+    def _on_toggle_taskbar_monitor(self, checked: bool):
+        """切换任务栏监控窗口显示."""
+        self._settings.taskbar_monitor_enabled = checked
 
     def _apply_style(self):
         """应用菜单样式."""

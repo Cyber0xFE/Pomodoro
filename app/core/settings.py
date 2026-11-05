@@ -210,3 +210,11 @@ class SettingsManager(QObject):
     @monitor_refresh_ms.setter
     def monitor_refresh_ms(self, value: int):
         self.set("monitor_refresh_ms", int(value))
+
+    @property
+    def taskbar_monitor_enabled(self) -> bool:
+        return self.get("taskbar_monitor_enabled")
+
+    @taskbar_monitor_enabled.setter
+    def taskbar_monitor_enabled(self, value: bool):
+        self.set("taskbar_monitor_enabled", bool(value))
