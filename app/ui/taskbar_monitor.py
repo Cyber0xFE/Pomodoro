@@ -277,7 +277,7 @@ class TaskbarMonitor(QObject):
         self._geo_key = self._geometry_key()
         self._refresh_geometry()
         self._render()
-        if self._hwnd:
+        if self._hwnd and self._dst is not None:
             _user32.ShowWindow(self._hwnd, SW_SHOWNA)
         self._start_animation()
 
@@ -518,9 +518,10 @@ class TaskbarMonitor(QObject):
     def _geometry_key(self):
         tr = self._taskbar_rect()
         nr = self._notify_rect()
+        task_list = self._task_list_rect()
         sr = self._start_rect()
         dpi = _user32.GetDpiForWindow(self._taskbar) if self._taskbar else 96
-        return (tr, nr, sr, dpi)
+        return (tr, nr, task_list, sr, dpi)
 
     def _taskbar_rect(self):
         rect = wintypes.RECT()
@@ -536,6 +537,34 @@ class TaskbarMonitor(QObject):
         if notify:
             _user32.GetWindowRect(notify, ctypes.byref(rect))
         return (rect.left, rect.top, rect.right, rect.bottom)
+
+    def _task_list_rect(self):
+        """返回任务栏应用图标区域的屏幕坐标.
+
+        Win10/11 的任务按钮通常位于 ``MSTaskSwWClass`` 或其
+        ``MSTaskListWClass`` 子窗口中。任务栏不会为我们嵌入的窗口
+        预留空间，因此必须避开这个区域后再放置监控窗口。
+        """
+        if not self._taskbar:
+            return (0, 0, 0, 0)
+
+        rebar = _user32.FindWindowExW(
+            self._taskbar, None, "ReBarWindow32", None)
+        parents = [rebar, self._taskbar]
+        for parent in parents:
+            if not parent:
+                continue
+            task_switcher = _user32.FindWindowExW(
+                parent, None, "MSTaskSwWClass", None)
+            if not task_switcher:
+                continue
+            task_list = _user32.FindWindowExW(
+                task_switcher, None, "MSTaskListWClass", None)
+            target = task_list or task_switcher
+            rect = wintypes.RECT()
+            if _user32.GetWindowRect(target, ctypes.byref(rect)):
+                return (rect.left, rect.top, rect.right, rect.bottom)
+        return (0, 0, 0, 0)
 
     def _start_rect(self):
         if not self._taskbar:
@@ -570,10 +599,14 @@ class TaskbarMonitor(QObject):
         pos = self._window_pos()
         if pos is None:
             self._dst = None
+            # 任务栏空间被应用图标占满时隐藏监控，避免覆盖图标。
+            _user32.ShowWindow(self._hwnd, SW_HIDE)
             return
         pt = wintypes.POINT(pos[0], pos[1])
         _user32.ScreenToClient(self._taskbar, ctypes.byref(pt))
         self._dst = (pt.x, pt.y)
+        if self._visible:
+            _user32.ShowWindow(self._hwnd, SW_SHOWNA)
 
     # ── 渲染 ──────────────────────────────────────────
 
@@ -904,6 +937,19 @@ class TaskbarMonitor(QObject):
         """把 QImage 内容提交给 layered 窗口."""
         if not self._bits or self._image is None or self._dst is None:
             return
+        # 任务栏布局可能在本次刷新期间移动开始按钮，提交前再做一次
+        # 边界校验，避免沿用上一次位置覆盖左侧小组件或开始按钮。
+        tr = self._taskbar_rect()
+        sr = self._start_rect()
+        dpi = _user32.GetDpiForWindow(self._taskbar) or 96
+        guard = tr[0] + int(round(120 * self._scale(dpi)))
+        screen_x = tr[0] + self._dst[0]
+        margin = int(round(2 * self._scale(dpi)))
+        if sr[2] > sr[0] and (
+                screen_x < guard or screen_x + self._w + margin > sr[0]):
+            self._dst = None
+            _user32.ShowWindow(self._hwnd, SW_HIDE)
+            return
         size = self._image.sizeInBytes()
         src = (ctypes.c_ubyte * size).from_buffer(self._image.bits())
         ctypes.memmove(self._bits, src, size)
@@ -926,26 +972,27 @@ class TaskbarMonitor(QObject):
     def _window_pos(self):
         """计算窗口在屏幕上的左上角坐标.
 
-        任务栏图标居中（Win11 默认）时放在「开始」按钮左侧的空白处；
-        左对齐或空间不足时回退到通知区左侧.
+        使用开始按钮左侧的安全空白。空间不足时返回 ``None``，
+        由调用方隐藏监控，避免覆盖任务栏图标。
         """
         tr = self._taskbar_rect()
-        nr = self._notify_rect()
         dpi = _user32.GetDpiForWindow(self._taskbar) or 96
         s = self._scale(dpi)
         margin = int(round(2 * s))
         if tr[3] - tr[1] <= tr[2] - tr[0]:
             y = tr[1] + (tr[3] - tr[1] - self._h) // 2
-            # 居中任务栏：优先占用开始按钮左侧的空白，避免遮住任务栏图标
+            # Win11 的 XAML 任务按钮没有可靠的 Win32 子窗口矩形。
+            # 开始按钮左侧是任务栏布局明确保留的空白区，优先使用它。
             sr = self._start_rect()
             if sr[2] > sr[0]:
-                if sr[0] - tr[0] > (tr[2] - tr[0]) // 7:
-                    x = sr[0] - self._w - margin
-                    if x >= tr[0] + margin:
-                        return x, y
-            # 回退：贴近通知区左侧
-            right = nr[0] if nr[2] > nr[0] else tr[2] - int(round(88 * s))
-            return right - self._w - margin, y
+                x = sr[0] - self._w - margin
+                # 左侧可能有 Win11 小组件/天气按钮，保留一段固定安全区。
+                left_guard = tr[0] + int(round(120 * s))
+                if x >= left_guard:
+                    return x, y
+                return None
+            # 没有可确认的开始按钮边界时不冒险覆盖任务栏图标。
+            return None
         # 垂直任务栏（Win10）：贴底部，居中
         x = tr[1] + (tr[3] - tr[1] - self._w) // 2
         y = tr[3] - self._h - margin
