@@ -13,9 +13,10 @@ import math
 import time
 from ctypes import wintypes
 
-from PySide6.QtCore import QObject, QRectF, Qt, QTimer
+from PySide6.QtCore import QObject, QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import (
-    QColor, QCursor, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter)
+    QColor, QCursor, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter,
+    QPolygonF)
 from PySide6.QtWidgets import QApplication, QMenu
 
 from app.core.constants import ANIM_FRAME_MS
@@ -245,6 +246,8 @@ class TaskbarMonitor(QObject):
 
         self._theme: Theme | None = theme_manager.current
         self._style = self._normalise_style(settings.taskbar_monitor_style)
+        self._alert_threshold = self._normalise_threshold(
+            settings.monitor_alert_threshold)
 
         # 窗口过程回调必须保持引用，避免被 GC 回收
         self._wndproc_ref = _WNDPROC(self._wnd_proc)
@@ -427,6 +430,13 @@ class TaskbarMonitor(QObject):
             self._render()
 
     def _on_setting_changed(self, key: str, value):
+        if key == "monitor_alert_threshold":
+            threshold = self._normalise_threshold(value)
+            if threshold != self._alert_threshold:
+                self._alert_threshold = threshold
+                if self._visible:
+                    self._render()
+            return
         if key != "taskbar_monitor_style":
             return
         style = self._normalise_style(value)
@@ -440,6 +450,13 @@ class TaskbarMonitor(QObject):
     def _normalise_style(value: str) -> str:
         valid = {name for name, _ in TASKBAR_STYLE_OPTIONS}
         return value if value in valid else TASKBAR_STYLE_OPTIONS[0][0]
+
+    @staticmethod
+    def _normalise_threshold(value) -> int:
+        try:
+            return max(1, min(100, int(value)))
+        except (TypeError, ValueError):
+            return 80
 
     # ── 数值动画 ──────────────────────────────────────
 
@@ -666,17 +683,22 @@ class TaskbarMonitor(QObject):
         # 箭头随数据流动轻微浮动
         wave = math.sin(2 * math.pi * self._flow_phase)
         arrow_dy = 1.2 * s * wave
-        arrow_alpha = int(170 + 85 * abs(wave))
         speed_base = self._mix(text, neon, 0.2)
         white = QColor("#FFFFFF")
+        # 箭头位于同色进度胶囊上，直接使用主题色会在填充区域内失去对比度。
+        # 提高亮度并保持完全不透明，再用暗色偏移层勾出轮廓。
+        arrow_color = self._mix(neon, white, 0.72)
+        arrow_color.setAlpha(255)
+        arrow_shadow = QColor(0, 0, 0, 230)
+        alert = QColor("#FF4D5D")
 
         rows = [
-            ("↑", self._anim_up, self._up_ceiling,
+            (self._anim_up, self._up_ceiling,
              "CPU", self._anim_cpu, self._cpu, -1),
-            ("↓", self._anim_down, self._down_ceiling,
+            (self._anim_down, self._down_ceiling,
              "RAM", self._anim_mem, self._mem, 1),
         ]
-        for i, (arrow, anim_speed, ceiling, label,
+        for i, (anim_speed, ceiling, label,
                 anim_pct, target_pct, sign) in enumerate(rows):
             top = i * row_h + pill_gap_y
 
@@ -687,13 +709,10 @@ class TaskbarMonitor(QObject):
                 p, QRectF(x1, top, pill1_w, pill_h), ratio_speed,
                 neon, pill_radius)
 
-            arrow_color = QColor(neon)
-            arrow_color.setAlpha(arrow_alpha)
-            p.setPen(arrow_color)
             x = x1 + pill_pad
-            p.drawText(QRectF(x, top + sign * arrow_dy, arrow_w, pill_h),
-                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                       arrow)
+            arrow_rect = QRectF(x, top + sign * arrow_dy, arrow_w, pill_h)
+            self._draw_network_triangle(
+                p, arrow_rect, sign < 0, arrow_color, arrow_shadow)
             x += arrow_w + _GAP_ARROW * s
 
             speed_flash = self._flash(self._up if sign < 0 else self._down,
@@ -706,22 +725,55 @@ class TaskbarMonitor(QObject):
             # ── CPU / RAM 胶囊（填充比例 = 使用率）──
             x2 = x1 + pill1_w + _PILL_GAP * s
             ratio_pct = max(0.0, min(1.0, anim_pct / 100.0))
+            metric_color = alert if anim_pct > self._alert_threshold else neon
             self._draw_pill(
                 p, QRectF(x2, top, pill2_w, pill_h), ratio_pct,
-                neon, pill_radius)
+                metric_color, pill_radius)
 
-            p.setPen(text)
+            p.setPen(metric_color if anim_pct > self._alert_threshold else text)
             p.drawText(QRectF(x2 + pill_pad, top, label_w, pill_h),
                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                        label)
 
             pct_flash = min(1.0, abs(target_pct - anim_pct) / 20.0)
-            p.setPen(self._mix(neon, white, 0.3 + 0.5 * pct_flash))
+            pct_color = metric_color if anim_pct > self._alert_threshold else self._mix(
+                neon, white, 0.3 + 0.5 * pct_flash)
+            p.setPen(pct_color)
             p.drawText(QRectF(x2 + pill2_w - pill_pad - pct_w, top,
                               pct_w, pill_h),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                        f"{anim_pct:.0f}%")
         p.end()
+
+    @staticmethod
+    def _draw_network_triangle(
+            p: QPainter, rect: QRectF, up: bool,
+            color: QColor, shadow: QColor):
+        """绘制醒目的实心上下行三角形，并用暗色外缘提升对比度."""
+        def polygon(bounds: QRectF) -> QPolygonF:
+            inset_x = bounds.width() * 0.04
+            inset_y = bounds.height() * 0.14
+            left = bounds.left() + inset_x
+            right = bounds.right() - inset_x
+            top = bounds.top() + inset_y
+            bottom = bounds.bottom() - inset_y
+            center_x = bounds.center().x()
+            if up:
+                points = ((center_x, top), (left, bottom), (right, bottom))
+            else:
+                points = ((left, top), (right, top), (center_x, bottom))
+            return QPolygonF([QPointF(x, y) for x, y in points])
+
+        p.save()
+        p.setPen(Qt.PenStyle.NoPen)
+        shape_rect = rect.adjusted(-0.7, 0.0, 0.7, 0.0)
+        shadow_rect = shape_rect.adjusted(-0.7, -0.7, 0.7, 0.7)
+        shadow_rect.translate(0.8, 0.8)
+        p.setBrush(shadow)
+        p.drawPolygon(polygon(shadow_rect))
+        p.setBrush(color)
+        p.drawPolygon(polygon(shape_rect))
+        p.restore()
 
     def _draw_pill(self, p: QPainter, rect: QRectF, ratio: float,
                    neon: QColor, radius: float):

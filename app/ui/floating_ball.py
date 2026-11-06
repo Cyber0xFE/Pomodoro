@@ -1356,6 +1356,10 @@ class FloatingBall(QWidget):
 
     def _paint_monitor_metrics(self, painter, g, d, cx, cy, r, neon, bg, ball_rect):
         """监控子视图：CPU 弧线 + 内存水位线."""
+        alert = QColor("#FF4D5D")
+        threshold = self._settings.monitor_alert_threshold
+        mem_color = alert if self._anim_mem > threshold else neon
+        cpu_color = alert if self._anim_cpu > threshold else neon
 
         # ── 内存水位线 ──
         mem_pct = self._anim_mem / 100.0
@@ -1384,10 +1388,10 @@ class FloatingBall(QWidget):
             wave_path.closeSubpath()
 
             water_grad = QLinearGradient(0, cy + r, 0, water_top)
-            water_grad.setColorAt(0.0, QColor(neon.red(), neon.green(), neon.blue(), 60))
-            water_grad.setColorAt(0.3, QColor(neon.red(), neon.green(), neon.blue(), 100))
-            water_grad.setColorAt(0.9, QColor(neon.red(), neon.green(), neon.blue(), 160))
-            water_grad.setColorAt(1.0, QColor(neon.red(), neon.green(), neon.blue(), 220))
+            water_grad.setColorAt(0.0, QColor(mem_color.red(), mem_color.green(), mem_color.blue(), 60))
+            water_grad.setColorAt(0.3, QColor(mem_color.red(), mem_color.green(), mem_color.blue(), 100))
+            water_grad.setColorAt(0.9, QColor(mem_color.red(), mem_color.green(), mem_color.blue(), 160))
+            water_grad.setColorAt(1.0, QColor(mem_color.red(), mem_color.green(), mem_color.blue(), 220))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(water_grad))
             painter.drawPath(wave_path)
@@ -1395,9 +1399,9 @@ class FloatingBall(QWidget):
             # 水面高亮线
             if mem_pct > 0.02:
                 surface_pen = QPen(QColor(
-                    min(neon.red() + 80, 255),
-                    min(neon.green() + 80, 255),
-                    min(neon.blue() + 80, 255), 140), 1.2)
+                    min(mem_color.red() + 80, 255),
+                    min(mem_color.green() + 80, 255),
+                    min(mem_color.blue() + 80, 255), 140), 1.2)
                 painter.setPen(surface_pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 surface_path = QPainterPath()
@@ -1433,7 +1437,7 @@ class FloatingBall(QWidget):
                         continue
                     seg_span = span_deg / n_trail
                     seg_start_angle = 90 - i * seg_span
-                    pen = QPen(QColor(neon.red(), neon.green(), neon.blue(), alpha), glow_w)
+                    pen = QPen(QColor(cpu_color.red(), cpu_color.green(), cpu_color.blue(), alpha), glow_w)
                     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                     painter.setPen(pen)
                     painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -1442,9 +1446,9 @@ class FloatingBall(QWidget):
                                     -int(seg_span * 16) - 1)
 
             # 主弧线本体（霓虹加亮色，相同彗尾渐变）
-            main_rgb = (min(neon.red() + 50, 255),
-                        min(neon.green() + 50, 255),
-                        min(neon.blue() + 50, 255))
+            main_rgb = (min(cpu_color.red() + 50, 255),
+                        min(cpu_color.green() + 50, 255),
+                        min(cpu_color.blue() + 50, 255))
             for i in range(n_trail):
                 t = (i + 1) / n_trail
                 intensity = t ** 1.3
@@ -1479,12 +1483,12 @@ class FloatingBall(QWidget):
         painter.setFont(label_font)
 
         cpu_text = f"CPU {int(self._anim_cpu)}%"
-        painter.setPen(QColor(255, 255, 255, 240))
+        painter.setPen(alert if self._anim_cpu > threshold else QColor(255, 255, 255, 240))
         cpu_rect = QRectF(cx - 50, cy - 26, 100, 22)
         painter.drawText(cpu_rect, Qt.AlignmentFlag.AlignCenter, cpu_text)
 
         mem_text = f"MEM {int(self._anim_mem)}%"
-        painter.setPen(QColor(255, 255, 255, 240))
+        painter.setPen(alert if self._anim_mem > threshold else QColor(255, 255, 255, 240))
         mem_rect = QRectF(cx - 50, cy + 6, 100, 22)
         painter.drawText(mem_rect, Qt.AlignmentFlag.AlignCenter, mem_text)
 
@@ -1734,6 +1738,8 @@ class FloatingBall(QWidget):
             self.update()
         elif key == "monitor_refresh_ms":
             self._net_refresh_s = value / 1000.0
+        elif key == "monitor_alert_threshold":
+            self.update()
 
     def _apply_theme(self, theme: Theme | None):
         """应用主题 - 带窗口淡入淡出过渡."""

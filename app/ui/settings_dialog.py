@@ -39,7 +39,7 @@ class SettingsDialog(QDialog):
         self._settings = settings
 
         self.setWindowTitle("番茄钟设置")
-        self.setFixedSize(390, 640)
+        self.setFixedSize(390, 680)
         self.setStyleSheet("font-size: 14px;")
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
@@ -155,6 +155,21 @@ class SettingsDialog(QDialog):
         refresh_layout.addStretch()
         layout.addLayout(refresh_layout)
 
+        # ── CPU / 内存警告阈值 ──
+        alert_layout = QHBoxLayout()
+        alert_label = QLabel("CPU / 内存警告阈值:")
+        alert_label.setFixedWidth(130)
+        self._alert_threshold_spin = QSpinBox()
+        self._alert_threshold_spin.setRange(1, 100)
+        self._alert_threshold_spin.setSuffix(" %")
+        self._alert_threshold_spin.setFixedWidth(105)
+        self._alert_threshold_spin.setToolTip(
+            "CPU 或内存使用率超过此值时显示为红色")
+        alert_layout.addWidget(alert_label)
+        alert_layout.addWidget(self._alert_threshold_spin)
+        alert_layout.addStretch()
+        layout.addLayout(alert_layout)
+
         # ── 全局热键 ──
         hotkey_layout = QHBoxLayout()
         hotkey_label = QLabel("显示/隐藏热键:")
@@ -248,6 +263,8 @@ class SettingsDialog(QDialog):
             QKeySequence(self._settings.brightness_down_hotkey))
         self._brightness_step_spin.setValue(self._settings.brightness_step)
         self._refresh_spin.setValue(self._settings.monitor_refresh_ms)
+        self._alert_threshold_spin.setValue(
+            self._settings.monitor_alert_threshold)
 
     def _on_save(self):
         """保存设置."""
@@ -264,6 +281,8 @@ class SettingsDialog(QDialog):
             self._taskbar_style_combo.currentData())
         self._settings.auto_start = self._autostart_check.isChecked()
         self._settings.startup_mode = self._startup_mode_combo.currentData()
+        self._settings.monitor_alert_threshold = (
+            self._alert_threshold_spin.value())
 
         # 保存热键 — 必须有修饰键
         ks = self._hotkey_edit.keySequence()

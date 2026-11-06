@@ -212,6 +212,14 @@ class SettingsManager(QObject):
         self.set("monitor_refresh_ms", int(value))
 
     @property
+    def monitor_alert_threshold(self) -> int:
+        return self.get("monitor_alert_threshold")
+
+    @monitor_alert_threshold.setter
+    def monitor_alert_threshold(self, value: int):
+        self.set("monitor_alert_threshold", max(1, min(100, int(value))))
+
+    @property
     def taskbar_monitor_enabled(self) -> bool:
         return self.get("taskbar_monitor_enabled")
 

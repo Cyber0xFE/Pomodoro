@@ -41,6 +41,7 @@ DEFAULT_SETTINGS = {
     "brightness_hotkey_enabled": True,
     "brightness_step": 5,
     "monitor_refresh_ms": 1000,
+    "monitor_alert_threshold": 80,
     "taskbar_monitor_enabled": True,
     "taskbar_monitor_style": "capsule",
 }
