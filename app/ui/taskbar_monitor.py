@@ -19,6 +19,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QApplication, QMenu
 
 from app.core.constants import ANIM_FRAME_MS
+from app.core.constants import TASKBAR_STYLE_OPTIONS
 from app.core.monitor import MonitorSnapshot, PerformanceMonitor
 from app.core.settings import SettingsManager
 from app.themes.theme_manager import Theme, ThemeManager
@@ -243,6 +244,7 @@ class TaskbarMonitor(QObject):
         self._geo_key: tuple | None = None
 
         self._theme: Theme | None = theme_manager.current
+        self._style = self._normalise_style(settings.taskbar_monitor_style)
 
         # 窗口过程回调必须保持引用，避免被 GC 回收
         self._wndproc_ref = _WNDPROC(self._wnd_proc)
@@ -250,6 +252,7 @@ class TaskbarMonitor(QObject):
 
         monitor.data_ready.connect(self._on_data)
         theme_manager.theme_changed.connect(self._on_theme_changed)
+        settings.setting_changed.connect(self._on_setting_changed)
 
         # 动画定时器（显示时运行）
         self._anim_timer = QTimer(self)
@@ -392,6 +395,14 @@ class TaskbarMonitor(QObject):
         """)
         hide_action = menu.addAction("隐藏任务栏监控")
         settings_action = menu.addAction("设置...")
+        style_menu = menu.addMenu("任务栏样式")
+        for value, label in TASKBAR_STYLE_OPTIONS:
+            action = style_menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(self._style == value)
+            action.triggered.connect(
+                lambda checked, v=value: setattr(
+                    self._settings, "taskbar_monitor_style", v))
         menu.addSeparator()
         quit_action = menu.addAction("退出")
         chosen = menu.exec(QCursor.pos())
@@ -414,6 +425,21 @@ class TaskbarMonitor(QObject):
         self._theme = theme
         if self._visible:
             self._render()
+
+    def _on_setting_changed(self, key: str, value):
+        if key != "taskbar_monitor_style":
+            return
+        style = self._normalise_style(value)
+        if style == self._style:
+            return
+        self._style = style
+        if self._visible:
+            self._render()
+
+    @staticmethod
+    def _normalise_style(value: str) -> str:
+        valid = {name for name, _ in TASKBAR_STYLE_OPTIONS}
+        return value if value in valid else TASKBAR_STYLE_OPTIONS[0][0]
 
     # ── 数值动画 ──────────────────────────────────────
 
@@ -599,7 +625,6 @@ class TaskbarMonitor(QObject):
         neon = QColor(theme.colors.center) if theme else QColor("#00E5FF")
         text = QColor(theme.colors.text) if theme else QColor("#FFFFFF")
         bg = QColor(theme.colors.edge) if theme else QColor("#101020")
-        bg.setAlpha(205)
 
         img = self._image
         img.fill(0)
@@ -610,17 +635,25 @@ class TaskbarMonitor(QObject):
         s = self._scale(self._dpi)
         radius = _CORNER * s
         rect = QRectF(0.5, 0.5, self._w - 1, self._h - 1)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(bg)
-        p.drawRoundedRect(rect, radius, radius)
+        if self._style != "minimal":
+            bg.setAlpha(205 if self._style == "capsule" else 185)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(bg)
+            if self._style == "flat":
+                p.drawRect(rect)
+            else:
+                p.drawRoundedRect(rect, radius, radius)
 
-        # 边框霓虹呼吸
-        breath = 0.5 + 0.5 * math.sin(2 * math.pi * self._phase)
-        border = QColor(neon)
-        border.setAlpha(int(70 + 80 * breath))
-        p.setPen(border)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(rect, radius, radius)
+            # 边框霓虹呼吸
+            breath = 0.5 + 0.5 * math.sin(2 * math.pi * self._phase)
+            border = QColor(neon)
+            border.setAlpha(int(70 + 80 * breath))
+            p.setPen(border)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            if self._style == "flat":
+                p.drawRect(rect)
+            else:
+                p.drawRoundedRect(rect, radius, radius)
 
         p.setFont(self._font)
         (arrow_w, speed_w, label_w, pct_w, pad,
@@ -693,6 +726,16 @@ class TaskbarMonitor(QObject):
     def _draw_pill(self, p: QPainter, rect: QRectF, ratio: float,
                    neon: QColor, radius: float):
         """绘制胶囊形进度条：暗色轨道 + 霓虹渐变填充 + 头部亮缘."""
+        if self._style == "flat":
+            self._draw_flat_bar(p, rect, ratio, neon)
+            return
+        if self._style == "segments":
+            self._draw_segments(p, rect, ratio, neon)
+            return
+        if self._style == "minimal":
+            self._draw_minimal_bar(p, rect, ratio, neon)
+            return
+
         ratio = max(0.0, min(1.0, ratio))
         s = self._scale(self._dpi)
 
@@ -723,6 +766,63 @@ class TaskbarMonitor(QObject):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(grad)
         p.drawRoundedRect(fill, fill_radius, fill_radius)
+
+    def _draw_flat_bar(self, p: QPainter, rect: QRectF, ratio: float,
+                       neon: QColor):
+        """绘制直角扁平进度条。"""
+        ratio = max(0.0, min(1.0, ratio))
+        track = QColor(neon)
+        track.setAlpha(24)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(track)
+        p.drawRect(rect)
+        if ratio <= 0.001:
+            return
+        fill = QRectF(rect.left(), rect.top(), rect.width() * ratio, rect.height())
+        grad = QLinearGradient(fill.left(), 0.0, fill.right(), 0.0)
+        c0 = QColor(neon)
+        c0.setAlpha(80)
+        c1 = QColor(neon)
+        c1.setAlpha(205)
+        grad.setColorAt(0.0, c0)
+        grad.setColorAt(1.0, c1)
+        p.setBrush(grad)
+        p.drawRect(fill)
+
+    def _draw_segments(self, p: QPainter, rect: QRectF, ratio: float,
+                       neon: QColor):
+        """绘制由 8 个格段组成的离散仪表。"""
+        ratio = max(0.0, min(1.0, ratio))
+        gap = max(1.0, self._scale(self._dpi))
+        count = 8
+        seg_w = max(1.0, (rect.width() - gap * (count - 1)) / count)
+        filled = ratio * count
+        for i in range(count):
+            x = rect.left() + i * (seg_w + gap)
+            color = QColor(neon)
+            if i + 1 <= filled:
+                color.setAlpha(185)
+            elif i < filled:
+                color.setAlpha(105)
+            else:
+                color.setAlpha(28)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(color)
+            p.drawRoundedRect(QRectF(x, rect.top(), seg_w, rect.height()),
+                              2.0, 2.0)
+
+    def _draw_minimal_bar(self, p: QPainter, rect: QRectF, ratio: float,
+                          neon: QColor):
+        """绘制透明底样式的细线进度提示。"""
+        ratio = max(0.0, min(1.0, ratio))
+        p.setPen(QColor(neon.red(), neon.green(), neon.blue(), 55))
+        p.drawLine(rect.left(), rect.bottom() - 1.0,
+                   rect.right(), rect.bottom() - 1.0)
+        if ratio > 0.001:
+            p.setPen(QColor(neon.red(), neon.green(), neon.blue(), 220))
+            p.drawLine(rect.left(), rect.bottom() - 1.0,
+                       rect.left() + rect.width() * ratio,
+                       rect.bottom() - 1.0)
 
     @staticmethod
     def _mix(a: QColor, b: QColor, t: float) -> QColor:

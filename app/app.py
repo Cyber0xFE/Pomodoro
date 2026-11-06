@@ -17,7 +17,8 @@ def _resource_path(relative_path: str) -> str:
         base = os.path.abspath(".")
     return os.path.join(base, relative_path)
 
-from app.core.constants import BALL_SIZE, DisplayMode, DURATION_OPTIONS
+from app.core.constants import (
+    BALL_SIZE, DisplayMode, DURATION_OPTIONS, TASKBAR_STYLE_OPTIONS)
 from app.core.settings import SettingsManager
 from app.core.timer import PomodoroTimer
 from app.core.monitor import PerformanceMonitor
@@ -184,6 +185,18 @@ class PomodoroApp:
             self._on_toggle_taskbar_monitor)
         self._tray_menu.addAction(self._tray_taskbar_action)
 
+        # 任务栏样式
+        tray_style_menu = self._tray_menu.addMenu("任务栏样式")
+        for value, label in TASKBAR_STYLE_OPTIONS:
+            action = QAction(label, tray_style_menu)
+            action.setData(value)
+            action.setCheckable(True)
+            action.setChecked(self._settings.taskbar_monitor_style == value)
+            action.triggered.connect(
+                lambda checked, v=value: self._set_taskbar_style(v))
+            tray_style_menu.addAction(action)
+        self._tray_style_menu = tray_style_menu
+
         self._tray_menu.addSeparator()
 
         # 设置时长子菜单
@@ -230,6 +243,12 @@ class PomodoroApp:
     def _on_toggle_taskbar_monitor(self, checked: bool):
         """托盘菜单 — 开启/关闭任务栏监控."""
         self._settings.taskbar_monitor_enabled = checked
+
+    def _set_taskbar_style(self, value: str):
+        """托盘菜单 — 切换任务栏监控样式."""
+        self._settings.taskbar_monitor_style = value
+        for action in self._tray_style_menu.actions():
+            action.setChecked(action.data() == value)
 
     def _on_tray_switch_mode(self):
         """托盘菜单 — 切换显示模式."""
@@ -367,6 +386,9 @@ class PomodoroApp:
             else:
                 self._taskbar_monitor.hide()
                 self._tray_taskbar_action.setChecked(False)
+        elif key == "taskbar_monitor_style":
+            for action in self._tray_style_menu.actions():
+                action.setChecked(action.data() == value)
 
     def _toggle_autostart(self, enabled: bool):
         """写入或删除开机启动注册表项."""

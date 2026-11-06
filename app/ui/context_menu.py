@@ -3,7 +3,7 @@
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QMenu
 
-from app.core.constants import DURATION_OPTIONS, DisplayMode
+from app.core.constants import DURATION_OPTIONS, DisplayMode, TASKBAR_STYLE_OPTIONS
 from app.core.timer import PomodoroTimer
 from app.core.settings import SettingsManager
 from app.themes.theme_manager import ThemeManager
@@ -83,6 +83,13 @@ class ContextMenu(QMenu):
         taskbar_action.setChecked(self._settings.taskbar_monitor_enabled)
         taskbar_action.triggered.connect(self._on_toggle_taskbar_monitor)
 
+        taskbar_style_menu = self.addMenu("任务栏样式")
+        for value, label in TASKBAR_STYLE_OPTIONS:
+            action = taskbar_style_menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(self._settings.taskbar_monitor_style == value)
+            action.triggered.connect(self._make_taskbar_style_handler(value))
+
         self.addSeparator()
 
         # ── 设置 ──
@@ -122,6 +129,12 @@ class ContextMenu(QMenu):
     def _on_toggle_taskbar_monitor(self, checked: bool):
         """切换任务栏监控窗口显示."""
         self._settings.taskbar_monitor_enabled = checked
+
+    def _make_taskbar_style_handler(self, value: str):
+        """创建任务栏样式切换回调."""
+        def handler():
+            self._settings.taskbar_monitor_style = value
+        return handler
 
     def _apply_style(self):
         """应用菜单样式."""

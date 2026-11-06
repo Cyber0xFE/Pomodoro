@@ -42,7 +42,16 @@ DEFAULT_SETTINGS = {
     "brightness_step": 5,
     "monitor_refresh_ms": 1000,
     "taskbar_monitor_enabled": True,
+    "taskbar_monitor_style": "capsule",
 }
+
+# 任务栏监控样式（值用于持久化，名称用于界面展示）
+TASKBAR_STYLE_OPTIONS = [
+    ("capsule", "霓虹胶囊"),
+    ("flat", "扁平进度条"),
+    ("minimal", "极简文字"),
+    ("segments", "分段仪表"),
+]
 
 # 预设时长选项（分钟）
 DURATION_OPTIONS = [10, 15, 20, 25, 30, 45, 50]

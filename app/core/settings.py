@@ -218,3 +218,11 @@ class SettingsManager(QObject):
     @taskbar_monitor_enabled.setter
     def taskbar_monitor_enabled(self, value: bool):
         self.set("taskbar_monitor_enabled", bool(value))
+
+    @property
+    def taskbar_monitor_style(self) -> str:
+        return self.get("taskbar_monitor_style")
+
+    @taskbar_monitor_style.setter
+    def taskbar_monitor_style(self, value: str):
+        self.set("taskbar_monitor_style", str(value))
