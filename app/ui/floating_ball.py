@@ -1483,12 +1483,12 @@ class FloatingBall(QWidget):
         painter.setFont(label_font)
 
         cpu_text = f"CPU {int(self._anim_cpu)}%"
-        painter.setPen(alert if self._anim_cpu > threshold else QColor(255, 255, 255, 240))
+        painter.setPen(QColor(255, 255, 255, 240))
         cpu_rect = QRectF(cx - 50, cy - 26, 100, 22)
         painter.drawText(cpu_rect, Qt.AlignmentFlag.AlignCenter, cpu_text)
 
         mem_text = f"MEM {int(self._anim_mem)}%"
-        painter.setPen(alert if self._anim_mem > threshold else QColor(255, 255, 255, 240))
+        painter.setPen(QColor(255, 255, 255, 240))
         mem_rect = QRectF(cx - 50, cy + 6, 100, 22)
         painter.drawText(mem_rect, Qt.AlignmentFlag.AlignCenter, mem_text)
 

@@ -730,15 +730,14 @@ class TaskbarMonitor(QObject):
                 p, QRectF(x2, top, pill2_w, pill_h), ratio_pct,
                 metric_color, pill_radius)
 
-            p.setPen(metric_color if anim_pct > self._alert_threshold else text)
+            # 警示色只用于进度填充，文字保持高对比度，避免红底上难以阅读。
+            p.setPen(text)
             p.drawText(QRectF(x2 + pill_pad, top, label_w, pill_h),
                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                        label)
 
             pct_flash = min(1.0, abs(target_pct - anim_pct) / 20.0)
-            pct_color = metric_color if anim_pct > self._alert_threshold else self._mix(
-                neon, white, 0.3 + 0.5 * pct_flash)
-            p.setPen(pct_color)
+            p.setPen(self._mix(neon, white, 0.3 + 0.5 * pct_flash))
             p.drawText(QRectF(x2 + pill2_w - pill_pad - pct_w, top,
                               pct_w, pill_h),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
