@@ -16,7 +16,7 @@ from ctypes import wintypes
 from PySide6.QtCore import QObject, QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import (
     QColor, QCursor, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter,
-    QPolygonF)
+    QPen)
 from PySide6.QtWidgets import QApplication, QMenu
 
 from app.core.constants import ANIM_FRAME_MS
@@ -711,7 +711,7 @@ class TaskbarMonitor(QObject):
 
             x = x1 + pill_pad
             arrow_rect = QRectF(x, top + sign * arrow_dy, arrow_w, pill_h)
-            self._draw_network_triangle(
+            self._draw_network_chevron(
                 p, arrow_rect, sign < 0, arrow_color, arrow_shadow)
             x += arrow_w + _GAP_ARROW * s
 
@@ -746,33 +746,38 @@ class TaskbarMonitor(QObject):
         p.end()
 
     @staticmethod
-    def _draw_network_triangle(
+    def _draw_network_chevron(
             p: QPainter, rect: QRectF, up: bool,
             color: QColor, shadow: QColor):
-        """绘制醒目的实心上下行三角形，并用暗色外缘提升对比度."""
-        def polygon(bounds: QRectF) -> QPolygonF:
-            inset_x = bounds.width() * 0.04
-            inset_y = bounds.height() * 0.14
-            left = bounds.left() + inset_x
-            right = bounds.right() - inset_x
-            top = bounds.top() + inset_y
-            bottom = bounds.bottom() - inset_y
-            center_x = bounds.center().x()
-            if up:
-                points = ((center_x, top), (left, bottom), (right, bottom))
-            else:
-                points = ((left, top), (right, top), (center_x, bottom))
-            return QPolygonF([QPointF(x, y) for x, y in points])
+        """绘制粗线折角上下行图标（^ / v），并用暗色描边提升对比度."""
+        inset_x = max(0.8, rect.width() * 0.08)
+        # 压低图标高度，避免折角显得细长。
+        inset_y = max(2.2, rect.height() * 0.34)
+        left = QPointF(rect.left() + inset_x, rect.bottom() - inset_y)
+        right = QPointF(rect.right() - inset_x, rect.bottom() - inset_y)
+        apex = QPointF(rect.center().x(), rect.top() + inset_y)
+        if not up:
+            left, right = (
+                QPointF(rect.left() + inset_x, rect.top() + inset_y),
+                QPointF(rect.right() - inset_x, rect.top() + inset_y),
+            )
+            apex = QPointF(rect.center().x(), rect.bottom() - inset_y)
+
+        def draw_chevron(pen: QPen, offset: QPointF):
+            p.setPen(pen)
+            p.drawLine(left + offset, apex + offset)
+            p.drawLine(apex + offset, right + offset)
 
         p.save()
-        p.setPen(Qt.PenStyle.NoPen)
-        shape_rect = rect.adjusted(-0.7, 0.0, 0.7, 0.0)
-        shadow_rect = shape_rect.adjusted(-0.7, -0.7, 0.7, 0.7)
-        shadow_rect.translate(0.8, 0.8)
-        p.setBrush(shadow)
-        p.drawPolygon(polygon(shadow_rect))
-        p.setBrush(color)
-        p.drawPolygon(polygon(shape_rect))
+        width = max(2.6, min(3.2, rect.height() * 0.22))
+        shadow_pen = QPen(shadow, width + 1.4)
+        shadow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        shadow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        draw_chevron(shadow_pen, QPointF(0.8, 0.8))
+        color_pen = QPen(color, width)
+        color_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        color_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        draw_chevron(color_pen, QPointF(0, 0))
         p.restore()
 
     def _draw_pill(self, p: QPainter, rect: QRectF, ratio: float,
