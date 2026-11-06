@@ -640,7 +640,6 @@ class TaskbarMonitor(QObject):
     def _paint(self):
         theme = self._theme
         neon = QColor(theme.colors.center) if theme else QColor("#00E5FF")
-        text = QColor(theme.colors.text) if theme else QColor("#FFFFFF")
         bg = QColor(theme.colors.edge) if theme else QColor("#101020")
 
         img = self._image
@@ -683,14 +682,12 @@ class TaskbarMonitor(QObject):
         # 箭头随数据流动轻微浮动
         wave = math.sin(2 * math.pi * self._flow_phase)
         arrow_dy = 1.2 * s * wave
-        speed_base = self._mix(text, neon, 0.2)
         white = QColor("#FFFFFF")
         # 箭头位于同色进度胶囊上，直接使用主题色会在填充区域内失去对比度。
         # 提高亮度并保持完全不透明，再用暗色偏移层勾出轮廓。
-        arrow_color = self._mix(neon, white, 0.72)
-        arrow_color.setAlpha(255)
+        arrow_color = white
         arrow_shadow = QColor(0, 0, 0, 230)
-        alert = QColor("#FF4D5D")
+        alert = QColor("#FF1744")
 
         rows = [
             (self._anim_up, self._up_ceiling,
@@ -715,9 +712,7 @@ class TaskbarMonitor(QObject):
                 p, arrow_rect, sign < 0, arrow_color, arrow_shadow)
             x += arrow_w + _GAP_ARROW * s
 
-            speed_flash = self._flash(self._up if sign < 0 else self._down,
-                                      anim_speed)
-            p.setPen(self._mix(speed_base, white, speed_flash))
+            p.setPen(white)
             p.drawText(QRectF(x, top, speed_w, pill_h),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                        _format_speed(anim_speed))
@@ -731,13 +726,12 @@ class TaskbarMonitor(QObject):
                 metric_color, pill_radius)
 
             # 警示色只用于进度填充，文字保持高对比度，避免红底上难以阅读。
-            p.setPen(text)
+            p.setPen(white)
             p.drawText(QRectF(x2 + pill_pad, top, label_w, pill_h),
                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                        label)
 
-            pct_flash = min(1.0, abs(target_pct - anim_pct) / 20.0)
-            p.setPen(self._mix(neon, white, 0.3 + 0.5 * pct_flash))
+            p.setPen(white)
             p.drawText(QRectF(x2 + pill2_w - pill_pad - pct_w, top,
                               pct_w, pill_h),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
@@ -796,13 +790,14 @@ class TaskbarMonitor(QObject):
         s = self._scale(self._dpi)
 
         track = QColor(neon)
-        track.setAlpha(22)
+        alert_mode = self._is_alert_color(neon)
+        track.setAlpha(35 if alert_mode else 22)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(track)
         p.drawRoundedRect(rect, radius, radius)
         # 轨道细边，强化“条形”轮廓
         edge = QColor(neon)
-        edge.setAlpha(55)
+        edge.setAlpha(80 if alert_mode else 55)
         p.setPen(edge)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(rect, radius, radius)
@@ -814,9 +809,9 @@ class TaskbarMonitor(QObject):
         fill_radius = min(radius, fill_w / 2.0)
         grad = QLinearGradient(fill.left(), 0.0, fill.right(), 0.0)
         c0 = QColor(neon)
-        c0.setAlpha(70)
+        c0.setAlpha(105 if alert_mode else 70)
         c1 = QColor(neon)
-        c1.setAlpha(190)
+        c1.setAlpha(235 if alert_mode else 190)
         grad.setColorAt(0.0, c0)
         grad.setColorAt(1.0, c1)
         p.setPen(Qt.PenStyle.NoPen)
@@ -828,7 +823,8 @@ class TaskbarMonitor(QObject):
         """绘制直角扁平进度条。"""
         ratio = max(0.0, min(1.0, ratio))
         track = QColor(neon)
-        track.setAlpha(24)
+        alert_mode = self._is_alert_color(neon)
+        track.setAlpha(38 if alert_mode else 24)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(track)
         p.drawRect(rect)
@@ -837,9 +833,9 @@ class TaskbarMonitor(QObject):
         fill = QRectF(rect.left(), rect.top(), rect.width() * ratio, rect.height())
         grad = QLinearGradient(fill.left(), 0.0, fill.right(), 0.0)
         c0 = QColor(neon)
-        c0.setAlpha(80)
+        c0.setAlpha(115 if alert_mode else 80)
         c1 = QColor(neon)
-        c1.setAlpha(205)
+        c1.setAlpha(240 if alert_mode else 205)
         grad.setColorAt(0.0, c0)
         grad.setColorAt(1.0, c1)
         p.setBrush(grad)
@@ -853,15 +849,16 @@ class TaskbarMonitor(QObject):
         count = 8
         seg_w = max(1.0, (rect.width() - gap * (count - 1)) / count)
         filled = ratio * count
+        alert_mode = self._is_alert_color(neon)
         for i in range(count):
             x = rect.left() + i * (seg_w + gap)
             color = QColor(neon)
             if i + 1 <= filled:
-                color.setAlpha(185)
+                color.setAlpha(235 if alert_mode else 185)
             elif i < filled:
-                color.setAlpha(105)
+                color.setAlpha(145 if alert_mode else 105)
             else:
-                color.setAlpha(28)
+                color.setAlpha(38 if alert_mode else 28)
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(color)
             p.drawRoundedRect(QRectF(x, rect.top(), seg_w, rect.height()),
@@ -871,14 +868,21 @@ class TaskbarMonitor(QObject):
                           neon: QColor):
         """绘制透明底样式的细线进度提示。"""
         ratio = max(0.0, min(1.0, ratio))
-        p.setPen(QColor(neon.red(), neon.green(), neon.blue(), 55))
+        alert_mode = self._is_alert_color(neon)
+        base_alpha = 75 if alert_mode else 55
+        active_alpha = 245 if alert_mode else 220
+        p.setPen(QColor(neon.red(), neon.green(), neon.blue(), base_alpha))
         p.drawLine(rect.left(), rect.bottom() - 1.0,
                    rect.right(), rect.bottom() - 1.0)
         if ratio > 0.001:
-            p.setPen(QColor(neon.red(), neon.green(), neon.blue(), 220))
+            p.setPen(QColor(neon.red(), neon.green(), neon.blue(), active_alpha))
             p.drawLine(rect.left(), rect.bottom() - 1.0,
                        rect.left() + rect.width() * ratio,
                        rect.bottom() - 1.0)
+
+    @staticmethod
+    def _is_alert_color(color: QColor) -> bool:
+        return (color.red(), color.green(), color.blue()) == (255, 23, 68)
 
     @staticmethod
     def _mix(a: QColor, b: QColor, t: float) -> QColor:
