@@ -5,7 +5,7 @@
 2. 窗口使用 ``WS_EX_LAYERED`` + ``UpdateLayeredWindow`` 提交像素，
    否则普通子窗口会被 Win11 任务栏的 XAML 合成层遮挡；
 3. 用 QImage 绘制内容后拷贝到 DIBSection，再交给 UpdateLayeredWindow 显示；
-4. 窗口定位在任务栏图标左侧的空白区，定时跟随任务栏布局变化.
+4. 独立进程检测任务栏按钮，监控定位在可用空档并跟随布局变化.
 """
 
 import ctypes
@@ -24,6 +24,7 @@ from app.core.constants import TASKBAR_STYLE_OPTIONS
 from app.core.monitor import MonitorSnapshot, PerformanceMonitor
 from app.core.settings import SettingsManager
 from app.themes.theme_manager import Theme, ThemeManager
+from app.utils.taskbar_layout import TaskbarLayoutProbe, free_taskbar_position
 
 # ── Win32 常量 ─────────────────────────────────────────
 WS_POPUP = 0x80000000
@@ -244,6 +245,10 @@ class TaskbarMonitor(QObject):
         # 任务栏几何缓存（用于检测布局变化）
         self._geo_key: tuple | None = None
 
+        self._layout_probe = TaskbarLayoutProbe(self)
+        self._layout_probe.changed.connect(self._on_layout_changed)
+        QApplication.instance().aboutToQuit.connect(self._layout_probe.stop)
+
         self._theme: Theme | None = theme_manager.current
         self._style = self._normalise_style(settings.taskbar_monitor_style)
         self._alert_threshold = self._normalise_threshold(
@@ -274,16 +279,17 @@ class TaskbarMonitor(QObject):
         """显示任务栏监控窗口."""
         self._visible = True
         self._ensure_window()
+        if self._taskbar:
+            self._layout_probe.start(self._taskbar)
         self._geo_key = self._geometry_key()
         self._refresh_geometry()
         self._render()
-        if self._hwnd and self._dst is not None:
-            _user32.ShowWindow(self._hwnd, SW_SHOWNA)
         self._start_animation()
 
     def hide(self):
         """隐藏任务栏监控窗口."""
         self._visible = False
+        self._layout_probe.stop()
         self._anim_timer.stop()
         if self._hwnd:
             _user32.ShowWindow(self._hwnd, SW_HIDE)
@@ -502,7 +508,9 @@ class TaskbarMonitor(QObject):
             return
         taskbar = self._find_taskbar()
         if not taskbar:
+            self._layout_probe.stop()
             return
+        self._layout_probe.start(taskbar)
         if self._taskbar != taskbar or not self._hwnd or not _user32.IsWindow(self._hwnd):
             self._geo_key = None
             self._ensure_window()
@@ -512,16 +520,20 @@ class TaskbarMonitor(QObject):
         key = self._geometry_key()
         if key != self._geo_key:
             self._geo_key = key
+            self._layout_probe.invalidate()
+            self._refresh_geometry()
+            self._render()
+
+    def _on_layout_changed(self):
+        if self._visible:
             self._refresh_geometry()
             self._render()
 
     def _geometry_key(self):
         tr = self._taskbar_rect()
         nr = self._notify_rect()
-        task_list = self._task_list_rect()
-        sr = self._start_rect()
         dpi = _user32.GetDpiForWindow(self._taskbar) if self._taskbar else 96
-        return (tr, nr, task_list, sr, dpi)
+        return (tr, nr, dpi)
 
     def _taskbar_rect(self):
         rect = wintypes.RECT()
@@ -536,43 +548,6 @@ class TaskbarMonitor(QObject):
         rect = wintypes.RECT()
         if notify:
             _user32.GetWindowRect(notify, ctypes.byref(rect))
-        return (rect.left, rect.top, rect.right, rect.bottom)
-
-    def _task_list_rect(self):
-        """返回任务栏应用图标区域的屏幕坐标.
-
-        Win10/11 的任务按钮通常位于 ``MSTaskSwWClass`` 或其
-        ``MSTaskListWClass`` 子窗口中。任务栏不会为我们嵌入的窗口
-        预留空间，因此必须避开这个区域后再放置监控窗口。
-        """
-        if not self._taskbar:
-            return (0, 0, 0, 0)
-
-        rebar = _user32.FindWindowExW(
-            self._taskbar, None, "ReBarWindow32", None)
-        parents = [rebar, self._taskbar]
-        for parent in parents:
-            if not parent:
-                continue
-            task_switcher = _user32.FindWindowExW(
-                parent, None, "MSTaskSwWClass", None)
-            if not task_switcher:
-                continue
-            task_list = _user32.FindWindowExW(
-                task_switcher, None, "MSTaskListWClass", None)
-            target = task_list or task_switcher
-            rect = wintypes.RECT()
-            if _user32.GetWindowRect(target, ctypes.byref(rect)):
-                return (rect.left, rect.top, rect.right, rect.bottom)
-        return (0, 0, 0, 0)
-
-    def _start_rect(self):
-        if not self._taskbar:
-            return (0, 0, 0, 0)
-        start = _user32.FindWindowExW(self._taskbar, None, "Start", None)
-        rect = wintypes.RECT()
-        if start:
-            _user32.GetWindowRect(start, ctypes.byref(rect))
         return (rect.left, rect.top, rect.right, rect.bottom)
 
     def _refresh_geometry(self):
@@ -605,8 +580,6 @@ class TaskbarMonitor(QObject):
         pt = wintypes.POINT(pos[0], pos[1])
         _user32.ScreenToClient(self._taskbar, ctypes.byref(pt))
         self._dst = (pt.x, pt.y)
-        if self._visible:
-            _user32.ShowWindow(self._hwnd, SW_SHOWNA)
 
     # ── 渲染 ──────────────────────────────────────────
 
@@ -615,8 +588,6 @@ class TaskbarMonitor(QObject):
             return
         if not _user32.IsWindow(self._hwnd):
             return
-        if self._image is None or self._dst is None:
-            self._refresh_geometry()
         if self._image is None or self._dst is None:
             return
         self._paint()
@@ -937,19 +908,15 @@ class TaskbarMonitor(QObject):
         """把 QImage 内容提交给 layered 窗口."""
         if not self._bits or self._image is None or self._dst is None:
             return
-        # 任务栏布局可能在本次刷新期间移动开始按钮，提交前再做一次
-        # 边界校验，避免沿用上一次位置覆盖左侧小组件或开始按钮。
-        tr = self._taskbar_rect()
-        sr = self._start_rect()
-        dpi = _user32.GetDpiForWindow(self._taskbar) or 96
-        guard = tr[0] + int(round(120 * self._scale(dpi)))
-        screen_x = tr[0] + self._dst[0]
-        margin = int(round(2 * self._scale(dpi)))
-        if sr[2] > sr[0] and (
-                screen_x < guard or screen_x + self._w + margin > sr[0]):
+        # 只使用仍有效的异步快照，检测超时后不继续沿用旧位置。
+        pos = self._window_pos()
+        if pos is None:
             self._dst = None
             _user32.ShowWindow(self._hwnd, SW_HIDE)
             return
+        pt = wintypes.POINT(*pos)
+        _user32.ScreenToClient(self._taskbar, ctypes.byref(pt))
+        self._dst = (pt.x, pt.y)
         size = self._image.sizeInBytes()
         src = (ctypes.c_ubyte * size).from_buffer(self._image.bits())
         ctypes.memmove(self._bits, src, size)
@@ -968,32 +935,22 @@ class TaskbarMonitor(QObject):
                 self._hwnd, None, dst.x, dst.y, self._w, self._h,
                 SWP_NOZORDER | SWP_NOACTIVATE)
             self._placed = placed
+        _user32.ShowWindow(self._hwnd, SW_SHOWNA)
 
     def _window_pos(self):
         """计算窗口在屏幕上的左上角坐标.
 
-        使用开始按钮左侧的安全空白。空间不足时返回 ``None``，
-        由调用方隐藏监控，避免覆盖任务栏图标。
+        避开真实按钮、小组件及通知区，空间不足时暂时隐藏。
         """
         tr = self._taskbar_rect()
         dpi = _user32.GetDpiForWindow(self._taskbar) or 96
-        s = self._scale(dpi)
-        margin = int(round(2 * s))
-        if tr[3] - tr[1] <= tr[2] - tr[0]:
-            y = tr[1] + (tr[3] - tr[1] - self._h) // 2
-            # Win11 的 XAML 任务按钮没有可靠的 Win32 子窗口矩形。
-            # 开始按钮左侧是任务栏布局明确保留的空白区，优先使用它。
-            sr = self._start_rect()
-            if sr[2] > sr[0]:
-                x = sr[0] - self._w - margin
-                # 左侧可能有 Win11 小组件/天气按钮，保留一段固定安全区。
-                left_guard = tr[0] + int(round(120 * s))
-                if x >= left_guard:
-                    return x, y
-                return None
-            # 没有可确认的开始按钮边界时不冒险覆盖任务栏图标。
+        buttons = self._layout_probe.rectangles(self._taskbar, tr)
+        if buttons is None:
             return None
-        # 垂直任务栏（Win10）：贴底部，居中
-        x = tr[1] + (tr[3] - tr[1] - self._w) // 2
-        y = tr[3] - self._h - margin
-        return x, y
+        notify = self._notify_rect()
+        if notify[2] > notify[0] and notify[3] > notify[1]:
+            buttons.append(notify)
+        previous = (tr[0] + self._dst[0], tr[1] + self._dst[1]) if self._dst else None
+        return free_taskbar_position(
+            tr, buttons, self._w, self._h,
+            max(2, int(round(4 * self._scale(dpi)))), previous)
