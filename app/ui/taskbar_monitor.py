@@ -217,7 +217,10 @@ class TaskbarMonitor(QObject):
         self._w = 0
         self._h = 0
         self._layout_key: tuple | None = None
-        self._metric_columns: list[tuple[str, str]] = []
+        # Packed percent-metric columns. Each tuple contains the top-row and
+        # bottom-row metric key; ``None`` means that row has no metric in the
+        # slot, while another selected metric may still occupy the slot.
+        self._metric_columns: list[tuple[str | None, str | None]] = []
         self._network_metrics: set[str] = set()
 
         # 最近一次监控数据（目标值）
@@ -542,12 +545,24 @@ class TaskbarMonitor(QObject):
         """Return the selected upload/download rows."""
         return self._selected_taskbar_metrics() & {"up", "down"}
 
-    def _visible_metric_columns(self) -> list[tuple[str, str]]:
-        """Return visible (top-row, bottom-row) metric column pairs."""
+    def _visible_metric_columns(self) -> list[tuple[str | None, str | None]]:
+        """Return packed top/bottom metric columns without empty holes.
+
+        CPU/GPU remain the top-row metric family and RAM/DISK remain the
+        bottom-row family. Each family is compacted independently, then the
+        rows are zipped into columns. This keeps the visual order stable while
+        allowing (for example) GPU and RAM to share the first column when CPU
+        and DISK are disabled.
+        """
         selected = self._selected_taskbar_metrics()
-        columns = [("cpu", "mem"), ("gpu", "disk")]
-        return [column for column in columns if any(
-            metric in selected for metric in column)]
+        top = [metric for metric in ("cpu", "gpu") if metric in selected]
+        bottom = [metric for metric in ("mem", "disk") if metric in selected]
+        column_count = max(len(top), len(bottom))
+        return [
+            (top[i] if i < len(top) else None,
+             bottom[i] if i < len(bottom) else None)
+            for i in range(column_count)
+        ]
 
     # ── 数值动画 ──────────────────────────────────────
 
@@ -840,7 +855,7 @@ class TaskbarMonitor(QObject):
                 # A column may be retained for the other row (e.g. CPU only),
                 # so leave this cell transparent when the specific metric is
                 # disabled rather than displaying an unlabeled empty bar.
-                if metric_key not in selected:
+                if metric_key is None or metric_key not in selected:
                     x_metric += metric_w
                     continue
                 label, anim_pct, target_pct = row_metrics[metric_key]
