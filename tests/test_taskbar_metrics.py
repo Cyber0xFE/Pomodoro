@@ -11,25 +11,25 @@ class TaskbarMetricLayoutTests(unittest.TestCase):
         monitor._settings = SimpleNamespace(taskbar_monitor_metrics=metrics)
         return monitor
 
-    def test_selected_metrics_fill_the_first_percent_slot(self):
+    def test_metrics_share_one_row_when_it_fits_without_network(self):
         monitor = self.monitor(("mem", "gpu"))
         self.assertEqual(
-            monitor._visible_metric_columns(),
-            [("mem", None), ("gpu", None)],
+            monitor._visible_metric_rows(),
+            (["mem", "gpu"], []),
         )
 
-    def test_selected_metrics_stay_contiguous_on_the_top_row(self):
+    def test_overflow_moves_to_empty_row_and_keeps_rows_compact(self):
+        monitor = self.monitor(("down", "cpu", "mem", "gpu"))
+        self.assertEqual(
+            monitor._visible_metric_rows(),
+            (["mem", "gpu"], ["cpu"]),
+        )
+
+    def test_three_metrics_without_network_split_evenly(self):
         monitor = self.monitor(("cpu", "mem", "gpu"))
         self.assertEqual(
-            monitor._visible_metric_columns(),
-            [("cpu", None), ("mem", None), ("gpu", None)],
-        )
-
-    def test_down_only_network_uses_the_bottom_row_for_metrics(self):
-        monitor = self.monitor(("mem", "gpu", "down"))
-        self.assertEqual(
-            monitor._visible_metric_columns(),
-            [(None, "mem"), (None, "gpu")],
+            monitor._visible_metric_rows(),
+            (["cpu", "mem"], ["gpu"]),
         )
 
 

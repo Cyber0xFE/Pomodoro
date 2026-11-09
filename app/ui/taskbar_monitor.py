@@ -217,10 +217,7 @@ class TaskbarMonitor(QObject):
         self._w = 0
         self._h = 0
         self._layout_key: tuple | None = None
-        # Packed percent-metric columns. Each tuple contains the top-row and
-        # bottom-row metric key; ``None`` means that row has no metric in the
-        # slot, while another selected metric may still occupy the slot.
-        self._metric_columns: list[tuple[str | None, str | None]] = []
+        self._metric_rows: tuple[list[str], list[str]] = ([], [])
         self._network_metrics: set[str] = set()
 
         # 最近一次监控数据（目标值）
@@ -545,23 +542,43 @@ class TaskbarMonitor(QObject):
         """Return the selected upload/download rows."""
         return self._selected_taskbar_metrics() & {"up", "down"}
 
-    def _visible_metric_columns(self) -> list[tuple[str | None, str | None]]:
-        """Return selected metrics in one contiguous taskbar row.
+    def _visible_metric_rows(self) -> tuple[list[str], list[str]]:
+        """Pack selected percentage metrics into the two available rows.
 
-        Network rows keep their up/down positions. The percent metrics share
-        the first selected network row (or the top row when no network row is
-        selected), so they stay adjacent instead of being split vertically.
+        Upload/download retain their rows. Percent metrics stay next to the
+        selected network row up to the row's balanced capacity, then flow into
+        the other row from its left edge. With one network row and three
+        percentage metrics, this keeps the first metric beside the network
+        indicator and moves the remaining two to the empty row.
         """
         selected = self._selected_taskbar_metrics()
         ordered = [metric for metric in ("cpu", "mem", "gpu", "disk")
                    if metric in selected]
         network = selected & {"up", "down"}
-        metric_row = 1 if "down" in network and "up" not in network else 0
-        return [
-            (metric if metric_row == 0 else None,
-             metric if metric_row == 1 else None)
-            for metric in ordered
-        ]
+        rows = [[], []]
+
+        if not network:
+            if len(ordered) <= 2:
+                rows[0] = ordered
+            else:
+                split = (len(ordered) + 1) // 2
+                rows[0], rows[1] = ordered[:split], ordered[split:]
+            return rows[0], rows[1]
+
+        capacity = max(2, (len(ordered) + len(network) + 1) // 2)
+        if len(network) == 1:
+            preferred_row = 0 if "up" in network else 1
+            preferred_count = max(0, capacity - 1)
+            rows[preferred_row] = ordered[:preferred_count]
+            rows[1 - preferred_row] = ordered[preferred_count:]
+            return rows[0], rows[1]
+
+        per_row_capacity = capacity - 1
+        rows[0] = ordered[:per_row_capacity]
+        rows[1] = ordered[per_row_capacity:per_row_capacity * 2]
+        if len(ordered) > per_row_capacity * 2:
+            rows[0].extend(ordered[per_row_capacity * 2:])
+        return rows[0], rows[1]
 
     # ── 数值动画 ──────────────────────────────────────
 
@@ -665,7 +682,7 @@ class TaskbarMonitor(QObject):
             self._dst = None
             return
 
-        key = (dpi, tb_h, tuple(self._visible_metric_columns()),
+        key = (dpi, tb_h, self._visible_metric_rows(),
                tuple(sorted(self._selected_network_metrics())))
         if key != self._layout_key:
             self._layout_key = key
@@ -710,10 +727,9 @@ class TaskbarMonitor(QObject):
 
         arrow_w = max(fm.horizontalAdvance("↑"), fm.horizontalAdvance("↓"))
         speed_w = fm.horizontalAdvance("999MB/s")
-        self._metric_columns = self._visible_metric_columns()
+        self._metric_rows = self._visible_metric_rows()
         self._network_metrics = self._selected_network_metrics()
-        # GPU/DISK use the same metric column as CPU/RAM; size for the
-        # widest label so the fourth character in ``DISK`` is never clipped.
+        # Size every percent pill for the widest available label.
         label_w = max(fm.horizontalAdvance("RAM"), fm.horizontalAdvance("DISK"))
         pct_w = fm.horizontalAdvance("100%")
 
@@ -722,13 +738,16 @@ class TaskbarMonitor(QObject):
         # 速度胶囊：箭头 + 网速；百分比胶囊：标签 + 数值
         pill1_w = (arrow_w + _GAP_ARROW * s + speed_w) + pill_pad * 2
         metric_w = (label_w + _GAP_LABEL * s + pct_w) + pill_pad * 2
-        network_w = 0.0
-        if self._network_metrics:
-            network_w = pill1_w
-            if self._metric_columns:
-                network_w += _PILL_GAP * s
-        content_w = (network_w + metric_w * len(self._metric_columns)
-                     + _PILL_GAP * s * max(len(self._metric_columns) - 1, 0))
+        row_widths = []
+        for row_index, metrics in enumerate(self._metric_rows):
+            network_key = "up" if row_index == 0 else "down"
+            network_w = pill1_w if network_key in self._network_metrics else 0.0
+            gap_count = max(0, len(metrics) - 1)
+            if network_w and metrics:
+                gap_count += 1
+            row_widths.append(
+                network_w + metric_w * len(metrics) + _PILL_GAP * s * gap_count)
+        content_w = max(row_widths, default=0.0)
         width = int(round(content_w + pad * 2))
         height = int(round(taskbar_h - _MARGIN_Y * 2 * s))
         if width < 10 or height < 10:
@@ -843,22 +862,15 @@ class TaskbarMonitor(QObject):
                            _format_speed(anim_speed))
 
             # ── 可选百分比胶囊 ──
-            network_offset = 0.0
-            if network_metrics:
-                network_offset = pill1_w
-                if self._metric_columns:
-                    network_offset += _PILL_GAP * s
-            x_metric = x1 + network_offset
-            for column_index, column in enumerate(self._metric_columns):
-                metric_key = column[i]
-                if column_index > 0:
+            row_metrics = self._metric_rows[i]
+            x_metric = x1
+            if network_key in network_metrics:
+                x_metric += pill1_w
+                if row_metrics:
                     x_metric += _PILL_GAP * s
-                # A column may be retained for the other row (e.g. CPU only),
-                # so leave this cell transparent when the specific metric is
-                # disabled rather than displaying an unlabeled empty bar.
-                if metric_key is None or metric_key not in selected:
-                    x_metric += metric_w
-                    continue
+            for metric_index, metric_key in enumerate(row_metrics):
+                if metric_index > 0:
+                    x_metric += _PILL_GAP * s
                 label, anim_pct, target_pct = metric_values[metric_key]
                 available = anim_pct is not None and target_pct is not None
                 ratio_pct = (
