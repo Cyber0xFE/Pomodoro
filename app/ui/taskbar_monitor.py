@@ -545,39 +545,27 @@ class TaskbarMonitor(QObject):
     def _visible_metric_rows(self) -> tuple[list[str], list[str]]:
         """Pack selected percentage metrics into the two available rows.
 
-        Upload/download retain their rows. Percent metrics stay next to the
-        selected network row up to the row's balanced capacity, then flow into
-        the other row from its left edge. With one network row and three
-        percentage metrics, this keeps the first metric beside the network
-        indicator and moves the remaining two to the empty row.
+        Upload/download retain their rows. Percent metrics fill the shorter
+        row first, alternating on ties, so both vertical slots are used before
+        another horizontal column is added.
         """
         selected = self._selected_taskbar_metrics()
         ordered = [metric for metric in ("cpu", "mem", "gpu", "disk")
                    if metric in selected]
         network = selected & {"up", "down"}
         rows = [[], []]
-
-        if not network:
-            if len(ordered) <= 2:
-                rows[0] = ordered
+        row_counts = [int("up" in network), int("down" in network)]
+        tie_row = 0
+        for metric in ordered:
+            if row_counts[0] < row_counts[1]:
+                row = 0
+            elif row_counts[1] < row_counts[0]:
+                row = 1
             else:
-                split = (len(ordered) + 1) // 2
-                rows[0], rows[1] = ordered[:split], ordered[split:]
-            return rows[0], rows[1]
-
-        capacity = max(2, (len(ordered) + len(network) + 1) // 2)
-        if len(network) == 1:
-            preferred_row = 0 if "up" in network else 1
-            preferred_count = max(0, capacity - 1)
-            rows[preferred_row] = ordered[:preferred_count]
-            rows[1 - preferred_row] = ordered[preferred_count:]
-            return rows[0], rows[1]
-
-        per_row_capacity = capacity - 1
-        rows[0] = ordered[:per_row_capacity]
-        rows[1] = ordered[per_row_capacity:per_row_capacity * 2]
-        if len(ordered) > per_row_capacity * 2:
-            rows[0].extend(ordered[per_row_capacity * 2:])
+                row = tie_row
+            rows[row].append(metric)
+            row_counts[row] += 1
+            tie_row = 1 - row
         return rows[0], rows[1]
 
     # ── 数值动画 ──────────────────────────────────────

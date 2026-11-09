@@ -11,25 +11,32 @@ class TaskbarMetricLayoutTests(unittest.TestCase):
         monitor._settings = SimpleNamespace(taskbar_monitor_metrics=metrics)
         return monitor
 
-    def test_metrics_share_one_row_when_it_fits_without_network(self):
+    def test_two_metrics_prefer_vertical_positions(self):
         monitor = self.monitor(("mem", "gpu"))
         self.assertEqual(
             monitor._visible_metric_rows(),
-            (["mem", "gpu"], []),
+            (["mem"], ["gpu"]),
         )
 
-    def test_overflow_moves_to_empty_row_and_keeps_rows_compact(self):
+    def test_metrics_balance_around_a_selected_network_row(self):
         monitor = self.monitor(("down", "cpu", "mem", "gpu"))
         self.assertEqual(
             monitor._visible_metric_rows(),
-            (["mem", "gpu"], ["cpu"]),
+            (["cpu", "gpu"], ["mem"]),
         )
 
-    def test_three_metrics_without_network_split_evenly(self):
+    def test_down_network_and_one_metric_use_separate_rows(self):
+        monitor = self.monitor(("down", "gpu"))
+        self.assertEqual(
+            monitor._visible_metric_rows(),
+            (["gpu"], []),
+        )
+
+    def test_three_metrics_without_network_fill_both_rows_first(self):
         monitor = self.monitor(("cpu", "mem", "gpu"))
         self.assertEqual(
             monitor._visible_metric_rows(),
-            (["cpu", "mem"], ["gpu"]),
+            (["cpu", "gpu"], ["mem"]),
         )
 
 
