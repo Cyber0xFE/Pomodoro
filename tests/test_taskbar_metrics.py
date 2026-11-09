@@ -18,11 +18,18 @@ class TaskbarMetricLayoutTests(unittest.TestCase):
             [("mem", None), ("gpu", None)],
         )
 
-    def test_selected_metrics_are_packed_row_major(self):
+    def test_selected_metrics_stay_contiguous_on_the_top_row(self):
         monitor = self.monitor(("cpu", "mem", "gpu"))
         self.assertEqual(
             monitor._visible_metric_columns(),
-            [("cpu", "gpu"), ("mem", None)],
+            [("cpu", None), ("mem", None), ("gpu", None)],
+        )
+
+    def test_down_only_network_uses_the_bottom_row_for_metrics(self):
+        monitor = self.monitor(("mem", "gpu", "down"))
+        self.assertEqual(
+            monitor._visible_metric_columns(),
+            [(None, "mem"), (None, "gpu")],
         )
 
 

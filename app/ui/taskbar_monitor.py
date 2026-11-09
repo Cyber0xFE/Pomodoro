@@ -546,20 +546,21 @@ class TaskbarMonitor(QObject):
         return self._selected_taskbar_metrics() & {"up", "down"}
 
     def _visible_metric_columns(self) -> list[tuple[str | None, str | None]]:
-        """Return selected metrics packed row-major without option holes."""
+        """Return selected metrics in one contiguous taskbar row.
+
+        Network rows keep their up/down positions. The percent metrics share
+        the first selected network row (or the top row when no network row is
+        selected), so they stay adjacent instead of being split vertically.
+        """
         selected = self._selected_taskbar_metrics()
         ordered = [metric for metric in ("cpu", "mem", "gpu", "disk")
                    if metric in selected]
-        # Keep one or two metrics on the first row; once there are three or
-        # four, split them across the two rows as evenly as possible.
-        column_count = (len(ordered) if len(ordered) <= 2
-                        else (len(ordered) + 1) // 2)
-        top = ordered[:column_count]
-        bottom = ordered[column_count:]
+        network = selected & {"up", "down"}
+        metric_row = 1 if "down" in network and "up" not in network else 0
         return [
-            (top[i] if i < len(top) else None,
-             bottom[i] if i < len(bottom) else None)
-            for i in range(column_count)
+            (metric if metric_row == 0 else None,
+             metric if metric_row == 1 else None)
+            for metric in ordered
         ]
 
     # ── 数值动画 ──────────────────────────────────────
