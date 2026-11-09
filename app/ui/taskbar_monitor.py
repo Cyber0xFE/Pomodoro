@@ -546,18 +546,16 @@ class TaskbarMonitor(QObject):
         return self._selected_taskbar_metrics() & {"up", "down"}
 
     def _visible_metric_columns(self) -> list[tuple[str | None, str | None]]:
-        """Return packed top/bottom metric columns without empty holes.
-
-        CPU/GPU remain the top-row metric family and RAM/DISK remain the
-        bottom-row family. Each family is compacted independently, then the
-        rows are zipped into columns. This keeps the visual order stable while
-        allowing (for example) GPU and RAM to share the first column when CPU
-        and DISK are disabled.
-        """
+        """Return selected metrics packed row-major without option holes."""
         selected = self._selected_taskbar_metrics()
-        top = [metric for metric in ("cpu", "gpu") if metric in selected]
-        bottom = [metric for metric in ("mem", "disk") if metric in selected]
-        column_count = max(len(top), len(bottom))
+        ordered = [metric for metric in ("cpu", "mem", "gpu", "disk")
+                   if metric in selected]
+        # Keep one or two metrics on the first row; once there are three or
+        # four, split them across the two rows as evenly as possible.
+        column_count = (len(ordered) if len(ordered) <= 2
+                        else (len(ordered) + 1) // 2)
+        top = ordered[:column_count]
+        bottom = ordered[column_count:]
         return [
             (top[i] if i < len(top) else None,
              bottom[i] if i < len(bottom) else None)
@@ -809,16 +807,18 @@ class TaskbarMonitor(QObject):
         alert = QColor("#FF1744")
 
         rows = [
-            (self._anim_up, self._up_ceiling, -1,
-             {"cpu": ("CPU", self._anim_cpu, self._cpu),
-              "gpu": ("GPU", self._anim_gpu, self._gpu)}),
-            (self._anim_down, self._down_ceiling, 1,
-             {"mem": ("RAM", self._anim_mem, self._mem),
-              "disk": ("DISK", self._anim_disk, self._disk)}),
+            (self._anim_up, self._up_ceiling, -1),
+            (self._anim_down, self._down_ceiling, 1),
         ]
+        metric_values = {
+            "cpu": ("CPU", self._anim_cpu, self._cpu),
+            "mem": ("RAM", self._anim_mem, self._mem),
+            "gpu": ("GPU", self._anim_gpu, self._gpu),
+            "disk": ("DISK", self._anim_disk, self._disk),
+        }
         selected = self._selected_taskbar_metrics()
         network_metrics = self._selected_network_metrics()
-        for i, (anim_speed, ceiling, sign, row_metrics) in enumerate(rows):
+        for i, (anim_speed, ceiling, sign) in enumerate(rows):
             top = i * row_h + pill_gap_y
 
             # ── 网速胶囊（填充比例 = 当前速度 / 动态上限）──
@@ -858,7 +858,7 @@ class TaskbarMonitor(QObject):
                 if metric_key is None or metric_key not in selected:
                     x_metric += metric_w
                     continue
-                label, anim_pct, target_pct = row_metrics[metric_key]
+                label, anim_pct, target_pct = metric_values[metric_key]
                 available = anim_pct is not None and target_pct is not None
                 ratio_pct = (
                     max(0.0, min(1.0, anim_pct / 100.0))
