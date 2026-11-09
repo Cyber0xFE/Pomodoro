@@ -5,7 +5,7 @@
 
 from PySide6.QtCore import QSettings, QObject, Signal
 
-from app.core.constants import DEFAULT_SETTINGS
+from app.core.constants import DEFAULT_SETTINGS, TASKBAR_METRIC_OPTIONS
 
 
 class SettingsManager(QObject):
@@ -234,3 +234,53 @@ class SettingsManager(QObject):
     @taskbar_monitor_style.setter
     def taskbar_monitor_style(self, value: str):
         self.set("taskbar_monitor_style", str(value))
+
+    @property
+    def taskbar_monitor_metrics(self) -> tuple[str, ...]:
+        """返回任务栏需要显示的指标标识，并迁移旧版默认网速设置。"""
+        key = "taskbar_monitor_metrics"
+        raw = self._settings.value(key, None)
+        if raw is None:
+            raw = DEFAULT_SETTINGS[key]
+        if isinstance(raw, (list, tuple)):
+            values = raw
+        else:
+            values = str(raw or "").split(",")
+        valid = {name for name, _ in TASKBAR_METRIC_OPTIONS}
+        result = []
+        for name in values:
+            name = str(name).strip().lower()
+            if name in valid and name not in result:
+                result.append(name)
+        # Prior versions exposed only CPU/内存/GPU/磁盘 selection. Existing
+        # saved values therefore need one-time migration to keep both network
+        # rows visible; a later explicit user choice is marked as configured.
+        version_key = "taskbar_monitor_metrics_version"
+        configured = self._settings.value(version_key, False)
+        configured = str(configured).lower() in ("true", "1", "yes")
+        if not configured and raw is not None:
+            for name in ("up", "down"):
+                if name not in result:
+                    result.append(name)
+            self._settings.setValue(key, ",".join(result))
+            self._settings.setValue(version_key, True)
+            self._settings.sync()
+        return tuple(result)
+
+    @taskbar_monitor_metrics.setter
+    def taskbar_monitor_metrics(self, value):
+        valid = {name for name, _ in TASKBAR_METRIC_OPTIONS}
+        if isinstance(value, str):
+            values = value.split(",")
+        else:
+            values = value or ()
+        result = []
+        for name in values:
+            name = str(name).strip().lower()
+            if name in valid and name not in result:
+                result.append(name)
+        # Mark the new schema before emitting setting_changed so listeners do
+        # not treat an explicit network opt-out as a legacy value.
+        self._settings.setValue("taskbar_monitor_metrics_version", True)
+        self._settings.sync()
+        self.set("taskbar_monitor_metrics", ",".join(result))

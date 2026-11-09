@@ -83,6 +83,8 @@ class PomodoroApp:
 
         # 退出时清理亮度控制器持久化进程
         QApplication.instance().aboutToQuit.connect(self._brightness.cleanup)
+        # 释放 Windows PDH 查询句柄。
+        QApplication.instance().aboutToQuit.connect(self._monitor.stop)
 
         # 监听设置变更（开机启动等需要即时生效的项）
         self._settings.setting_changed.connect(self._on_setting_changed)

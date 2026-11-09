@@ -189,7 +189,7 @@ def _format_speed(bps: float) -> str:
 
 
 class TaskbarMonitor(QObject):
-    """内嵌任务栏的性能监控窗口（CPU / 内存 / 上下行网速）."""
+    """内嵌任务栏的性能监控窗口（CPU / 内存 / GPU / 磁盘 / 网速）."""
 
     def __init__(
         self,
@@ -217,16 +217,22 @@ class TaskbarMonitor(QObject):
         self._w = 0
         self._h = 0
         self._layout_key: tuple | None = None
+        self._metric_columns: list[tuple[str, str]] = []
+        self._network_metrics: set[str] = set()
 
         # 最近一次监控数据（目标值）
         self._cpu = 0.0
         self._mem = 0.0
+        self._gpu: float | None = None
+        self._disk: float | None = None
         self._up = 0.0
         self._down = 0.0
 
         # 动画插值后的显示值
         self._anim_cpu = 0.0
         self._anim_mem = 0.0
+        self._anim_gpu: float | None = None
+        self._anim_disk: float | None = None
         self._anim_up = 0.0
         self._anim_down = 0.0
         # 网速动态上限（快速上升、缓慢回落）
@@ -427,6 +433,10 @@ class TaskbarMonitor(QObject):
     def _on_data(self, snapshot: MonitorSnapshot):
         self._cpu = snapshot.cpu_percent
         self._mem = snapshot.memory_percent
+        self._gpu = self._normalise_optional_percent(
+            getattr(snapshot, "gpu_percent", None))
+        self._disk = self._normalise_optional_percent(
+            getattr(snapshot, "disk_percent", None))
         self._up = snapshot.net_sent_bps
         self._down = snapshot.net_recv_bps
 
@@ -442,6 +452,15 @@ class TaskbarMonitor(QObject):
                 self._alert_threshold = threshold
                 if self._visible:
                     self._render()
+            return
+        if key == "taskbar_monitor_metrics":
+            # The selected metric set changes the surface width.  Force a
+            # geometry rebuild immediately so the collision probe uses the
+            # new width before the next layout timer tick.
+            self._layout_key = None
+            if self._visible:
+                self._refresh_geometry()
+                self._render()
             return
         if key != "taskbar_monitor_style":
             return
@@ -464,6 +483,72 @@ class TaskbarMonitor(QObject):
         except (TypeError, ValueError):
             return 80
 
+    @staticmethod
+    def _normalise_optional_percent(value: float | None) -> float | None:
+        """Clamp an optional metric while preserving unavailable readings."""
+        if value is None:
+            return None
+        try:
+            return max(0.0, min(100.0, float(value)))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _advance_optional_percent(current: float | None,
+                                  target: float | None,
+                                  smoothing: float) -> float | None:
+        """EMA step for optional metrics; unknown values stay unknown."""
+        if target is None:
+            return None
+        if current is None:
+            return target
+        return current + (target - current) * smoothing
+
+    def _selected_taskbar_metrics(self) -> set[str]:
+        """Return all metrics enabled in taskbar settings.
+
+        SettingsManager stores this as a comma-separated string, while
+        accepting an iterable here keeps the renderer tolerant of callers
+        that provide a list during migration. A missing key means the
+        default set (all six metrics); an explicitly empty value hides all
+        taskbar pills.
+        """
+        default = {"cpu", "mem", "gpu", "disk", "up", "down"}
+        raw = getattr(self._settings, "taskbar_monitor_metrics", None)
+        if raw is None:
+            return default
+        if isinstance(raw, str):
+            tokens = raw.replace(";", ",").split(",")
+        else:
+            try:
+                tokens = list(raw)
+            except TypeError:
+                return default
+        aliases = {
+            "memory": "mem", "ram": "mem", "disk_activity": "disk",
+            "upload": "up", "download": "down",
+            "net_up": "up", "net_down": "down",
+            "network_up": "up", "network_down": "down",
+        }
+        selected: set[str] = set()
+        for token in tokens:
+            name = str(token).strip().lower()
+            name = aliases.get(name, name)
+            if name in default:
+                selected.add(name)
+        return selected
+
+    def _selected_network_metrics(self) -> set[str]:
+        """Return the selected upload/download rows."""
+        return self._selected_taskbar_metrics() & {"up", "down"}
+
+    def _visible_metric_columns(self) -> list[tuple[str, str]]:
+        """Return visible (top-row, bottom-row) metric column pairs."""
+        selected = self._selected_taskbar_metrics()
+        columns = [("cpu", "mem"), ("gpu", "disk")]
+        return [column for column in columns if any(
+            metric in selected for metric in column)]
+
     # ── 数值动画 ──────────────────────────────────────
 
     def _start_animation(self):
@@ -482,6 +567,10 @@ class TaskbarMonitor(QObject):
         k_spd = 1.0 - math.exp(-dt / _TAU_SPEED)
         self._anim_cpu += (self._cpu - self._anim_cpu) * k_pct
         self._anim_mem += (self._mem - self._anim_mem) * k_pct
+        self._anim_gpu = self._advance_optional_percent(
+            self._anim_gpu, self._gpu, k_pct)
+        self._anim_disk = self._advance_optional_percent(
+            self._anim_disk, self._disk, k_pct)
         self._anim_up += (self._up - self._anim_up) * k_spd
         self._anim_down += (self._down - self._anim_down) * k_spd
 
@@ -562,7 +651,8 @@ class TaskbarMonitor(QObject):
             self._dst = None
             return
 
-        key = (dpi, tb_h)
+        key = (dpi, tb_h, tuple(self._visible_metric_columns()),
+               tuple(sorted(self._selected_network_metrics())))
         if key != self._layout_key:
             self._layout_key = key
             self._rebuild_surface(dpi, tb_h)
@@ -606,15 +696,25 @@ class TaskbarMonitor(QObject):
 
         arrow_w = max(fm.horizontalAdvance("↑"), fm.horizontalAdvance("↓"))
         speed_w = fm.horizontalAdvance("999MB/s")
-        label_w = fm.horizontalAdvance("RAM")
+        self._metric_columns = self._visible_metric_columns()
+        self._network_metrics = self._selected_network_metrics()
+        # GPU/DISK use the same metric column as CPU/RAM; size for the
+        # widest label so the fourth character in ``DISK`` is never clipped.
+        label_w = max(fm.horizontalAdvance("RAM"), fm.horizontalAdvance("DISK"))
         pct_w = fm.horizontalAdvance("100%")
 
         pad = _PAD_X * s
         pill_pad = _PILL_PAD * s
         # 速度胶囊：箭头 + 网速；百分比胶囊：标签 + 数值
         pill1_w = (arrow_w + _GAP_ARROW * s + speed_w) + pill_pad * 2
-        pill2_w = (label_w + _GAP_LABEL * s + pct_w) + pill_pad * 2
-        content_w = pill1_w + _PILL_GAP * s + pill2_w
+        metric_w = (label_w + _GAP_LABEL * s + pct_w) + pill_pad * 2
+        network_w = 0.0
+        if self._network_metrics:
+            network_w = pill1_w
+            if self._metric_columns:
+                network_w += _PILL_GAP * s
+        content_w = (network_w + metric_w * len(self._metric_columns)
+                     + _PILL_GAP * s * max(len(self._metric_columns) - 1, 0))
         width = int(round(content_w + pad * 2))
         height = int(round(taskbar_h - _MARGIN_Y * 2 * s))
         if width < 10 or height < 10:
@@ -623,7 +723,7 @@ class TaskbarMonitor(QObject):
         self._w, self._h = width, height
         self._font = font
         self._cols = (arrow_w, speed_w, label_w, pct_w,
-                      pad, pill_pad, pill1_w, pill2_w)
+                      pad, pill_pad, pill1_w, metric_w)
 
         if self._bitmap:
             _gdi32.DeleteObject(self._bitmap)
@@ -677,7 +777,7 @@ class TaskbarMonitor(QObject):
 
         p.setFont(self._font)
         (arrow_w, speed_w, label_w, pct_w, pad,
-         pill_pad, pill1_w, pill2_w) = self._cols
+         pill_pad, pill1_w, metric_w) = self._cols
         row_h = self._h / 2.0
         pill_gap_y = _PILL_GAP_Y * s
         pill_h = row_h - pill_gap_y * 2
@@ -694,52 +794,79 @@ class TaskbarMonitor(QObject):
         alert = QColor("#FF1744")
 
         rows = [
-            (self._anim_up, self._up_ceiling,
-             "CPU", self._anim_cpu, self._cpu, -1),
-            (self._anim_down, self._down_ceiling,
-             "RAM", self._anim_mem, self._mem, 1),
+            (self._anim_up, self._up_ceiling, -1,
+             {"cpu": ("CPU", self._anim_cpu, self._cpu),
+              "gpu": ("GPU", self._anim_gpu, self._gpu)}),
+            (self._anim_down, self._down_ceiling, 1,
+             {"mem": ("RAM", self._anim_mem, self._mem),
+              "disk": ("DISK", self._anim_disk, self._disk)}),
         ]
-        for i, (anim_speed, ceiling, label,
-                anim_pct, target_pct, sign) in enumerate(rows):
+        selected = self._selected_taskbar_metrics()
+        network_metrics = self._selected_network_metrics()
+        for i, (anim_speed, ceiling, sign, row_metrics) in enumerate(rows):
             top = i * row_h + pill_gap_y
 
             # ── 网速胶囊（填充比例 = 当前速度 / 动态上限）──
             x1 = pad
-            ratio_speed = anim_speed / ceiling if ceiling > 0 else 0.0
-            self._draw_pill(
-                p, QRectF(x1, top, pill1_w, pill_h), ratio_speed,
-                neon, pill_radius)
+            network_key = "up" if i == 0 else "down"
+            if network_key in network_metrics:
+                ratio_speed = anim_speed / ceiling if ceiling > 0 else 0.0
+                self._draw_pill(
+                    p, QRectF(x1, top, pill1_w, pill_h), ratio_speed,
+                    neon, pill_radius)
 
-            x = x1 + pill_pad
-            arrow_rect = QRectF(x, top + sign * arrow_dy, arrow_w, pill_h)
-            self._draw_network_chevron(
-                p, arrow_rect, sign < 0, arrow_color, arrow_shadow)
-            x += arrow_w + _GAP_ARROW * s
+                x = x1 + pill_pad
+                arrow_rect = QRectF(x, top + sign * arrow_dy, arrow_w, pill_h)
+                self._draw_network_chevron(
+                    p, arrow_rect, sign < 0, arrow_color, arrow_shadow)
+                x += arrow_w + _GAP_ARROW * s
 
-            p.setPen(white)
-            p.drawText(QRectF(x, top, speed_w, pill_h),
-                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                       _format_speed(anim_speed))
+                p.setPen(white)
+                p.drawText(QRectF(x, top, speed_w, pill_h),
+                           Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                           _format_speed(anim_speed))
 
-            # ── CPU / RAM 胶囊（填充比例 = 使用率）──
-            x2 = x1 + pill1_w + _PILL_GAP * s
-            ratio_pct = max(0.0, min(1.0, anim_pct / 100.0))
-            metric_color = alert if anim_pct > self._alert_threshold else neon
-            self._draw_pill(
-                p, QRectF(x2, top, pill2_w, pill_h), ratio_pct,
-                metric_color, pill_radius)
+            # ── 可选百分比胶囊 ──
+            network_offset = 0.0
+            if network_metrics:
+                network_offset = pill1_w
+                if self._metric_columns:
+                    network_offset += _PILL_GAP * s
+            x_metric = x1 + network_offset
+            for column_index, column in enumerate(self._metric_columns):
+                metric_key = column[i]
+                if column_index > 0:
+                    x_metric += _PILL_GAP * s
+                # A column may be retained for the other row (e.g. CPU only),
+                # so leave this cell transparent when the specific metric is
+                # disabled rather than displaying an unlabeled empty bar.
+                if metric_key not in selected:
+                    x_metric += metric_w
+                    continue
+                label, anim_pct, target_pct = row_metrics[metric_key]
+                available = anim_pct is not None and target_pct is not None
+                ratio_pct = (
+                    max(0.0, min(1.0, anim_pct / 100.0))
+                    if available else 0.0)
+                metric_color = (
+                    alert if available and anim_pct > self._alert_threshold
+                    else neon)
+                self._draw_pill(
+                    p, QRectF(x_metric, top, metric_w, pill_h), ratio_pct,
+                    metric_color, pill_radius)
 
-            # 警示色只用于进度填充，文字保持高对比度，避免红底上难以阅读。
-            p.setPen(white)
-            p.drawText(QRectF(x2 + pill_pad, top, label_w, pill_h),
-                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                       label)
-
-            p.setPen(white)
-            p.drawText(QRectF(x2 + pill2_w - pill_pad - pct_w, top,
-                              pct_w, pill_h),
-                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                       f"{anim_pct:.0f}%")
+                # 警示色只用于进度填充，文字保持高对比度，避免红底上难以阅读。
+                p.setPen(white)
+                p.drawText(QRectF(x_metric + pill_pad, top, label_w, pill_h),
+                           Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                           label)
+                metric_text = f"{anim_pct:.0f}%" if available else "--"
+                p.setPen(white)
+                p.drawText(QRectF(x_metric + metric_w - pill_pad - pct_w, top,
+                                  pct_w, pill_h),
+                           Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                           metric_text)
+                x_metric += metric_w
         p.end()
 
     @staticmethod

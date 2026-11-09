@@ -44,6 +44,8 @@ DEFAULT_SETTINGS = {
     "monitor_alert_threshold": 80,
     "taskbar_monitor_enabled": True,
     "taskbar_monitor_style": "capsule",
+    # 任务栏可选指标；默认保持 CPU/内存/GPU/磁盘和上下行网速全部显示。
+    "taskbar_monitor_metrics": "cpu,mem,gpu,disk,up,down",
 }
 
 # 任务栏监控样式（值用于持久化，名称用于界面展示）
@@ -52,6 +54,16 @@ TASKBAR_STYLE_OPTIONS = [
     ("flat", "扁平进度条"),
     ("minimal", "极简文字"),
     ("segments", "分段仪表"),
+]
+
+# 任务栏可选的系统使用率指标（值用于持久化，名称用于设置界面）。
+TASKBAR_METRIC_OPTIONS = [
+    ("cpu", "CPU"),
+    ("mem", "内存"),
+    ("gpu", "GPU"),
+    ("disk", "磁盘"),
+    ("up", "上行"),
+    ("down", "下行"),
 ]
 
 # 预设时长选项（分钟）

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Windows 桌面番茄钟 / 性能监控应用，核心为一个赛博 HUD 风格的圆形悬浮球，始终置顶显示。PySide6 + Python + psutil 实现，PyInstaller 打包为单文件 EXE。
 
-两种显示模式：**番茄钟**（倒计时 + 进度弧线）和 **性能监控**（CPU 弧线 + 内存水位线 + 实时网速），中键点击或右键菜单切换，水平翻转变脸动画过渡。
+两种显示模式：**番茄钟**（倒计时 + 进度弧线）和 **性能监控**（CPU 弧线 + 内存水位线 + 实时网速），中键点击或右键菜单切换，水平翻转变脸动画过渡。任务栏监控另支持可选的 CPU、内存、GPU、磁盘活动率及上下行网速指标。
 
 ## 常用命令
 
@@ -36,7 +36,7 @@ rm -rf build dist DX3906.spec
 main.py                     # 入口
 app/app.py                  # PomodoroApp：组装模块、恢复设置、启动
   ├── core/timer.py         # PomodoroTimer：QTimer 倒计时引擎，set_duration 接收秒
-  ├── core/monitor.py       # PerformanceMonitor：psutil 轮询 CPU/内存/网速
+  ├── core/monitor.py       # PerformanceMonitor：psutil/PDH 轮询 CPU/内存/网速/GPU/磁盘
   ├── core/settings.py      # SettingsManager：QSettings → Windows 注册表，duration_seconds 带旧版兼容迁移
   ├── core/constants.py     # TimerState / DisplayMode 枚举、BALL_SIZE、DEFAULT_SETTINGS
   ├── themes/theme_manager.py  # ThemeManager：加载 JSON 预设，切换主题
@@ -69,10 +69,11 @@ app/app.py                  # PomodoroApp：组装模块、恢复设置、启动
 
 ### 性能监控模式
 
-- `PerformanceMonitor`（`core/monitor.py`）每秒轮询 psutil，通过 `data_ready` 信号发送 `MonitorSnapshot`
+- `PerformanceMonitor`（`core/monitor.py`）按设置间隔轮询 psutil 和 Windows PDH，通过 `data_ready` 信号发送 `MonitorSnapshot`；PDH 不可用时 GPU/磁盘字段为 `None`
 - CPU：弧形进度条，EMA 平滑动画
 - 内存：水位线填充效果，从底部向上
 - 网速：上行/下行实时数字显示，动态调整上限
+- 任务栏：CPU/内存/GPU/磁盘及上传/下载网速均可在设置中选择
 - 中键点击悬浮球切换 POMODORO ↔ MONITOR
 
 ### 时长系统

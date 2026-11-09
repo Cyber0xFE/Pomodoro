@@ -3,14 +3,14 @@
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QHBoxLayout, QKeySequenceEdit,
+    QCheckBox, QComboBox, QDialog, QGridLayout, QHBoxLayout, QKeySequenceEdit,
     QLabel, QMessageBox, QPushButton, QSlider, QSpinBox, QVBoxLayout,
     QWidget,
 )
 
 from app.core.constants import (
     MONITOR_REFRESH_MAX_MS, MONITOR_REFRESH_MIN_MS, MONITOR_REFRESH_STEP_MS,
-    OPACITY_MIN, OPACITY_MAX, TASKBAR_STYLE_OPTIONS,
+    OPACITY_MIN, OPACITY_MAX, TASKBAR_STYLE_OPTIONS, TASKBAR_METRIC_OPTIONS,
 )
 from app.core.settings import SettingsManager
 
@@ -39,7 +39,7 @@ class SettingsDialog(QDialog):
         self._settings = settings
 
         self.setWindowTitle("番茄钟设置")
-        self.setFixedSize(390, 680)
+        self.setFixedSize(390, 720)
         self.setStyleSheet("font-size: 14px;")
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
@@ -104,8 +104,30 @@ class SettingsDialog(QDialog):
         # ── 任务栏监控 ──
         self._taskbar_check = QCheckBox("在任务栏内嵌显示性能监控")
         self._taskbar_check.setToolTip(
-            "在任务栏图标左侧的空白区域显示 CPU / 内存 / 网速进度条")
+            "在任务栏图标左侧的空白区域显示性能监控指标")
         layout.addWidget(self._taskbar_check)
+
+        # ── 任务栏指标 ──
+        metric_layout = QVBoxLayout()
+        metric_label = QLabel("任务栏指标:")
+        metric_label.setToolTip("勾选要在任务栏显示的 CPU、内存、GPU、磁盘和上下行网速")
+        metric_layout.addWidget(metric_label)
+        metric_grid = QGridLayout()
+        self._taskbar_metric_checks = {}
+        for i, (value, label) in enumerate(TASKBAR_METRIC_OPTIONS):
+            check = QCheckBox(label)
+            if value == "disk":
+                detail = "磁盘活动率"
+            elif value in ("up", "down"):
+                detail = f"{label}网速"
+            else:
+                detail = f"{label}使用率"
+            check.setToolTip(f"在任务栏中显示{detail}")
+            self._taskbar_metric_checks[value] = check
+            metric_grid.addWidget(check, i // 3, i % 3)
+        metric_grid.setColumnStretch(2, 1)
+        metric_layout.addLayout(metric_grid)
+        layout.addLayout(metric_layout)
 
         # ── 任务栏样式 ──
         taskbar_style_layout = QHBoxLayout()
@@ -147,7 +169,7 @@ class SettingsDialog(QDialog):
         self._refresh_spin.setSuffix(" 毫秒")
         self._refresh_spin.setFixedWidth(105)
         self._refresh_spin.setToolTip(
-            "CPU / 内存 / 网速共用此刷新间隔\n"
+            "CPU / 内存 / GPU / 磁盘 / 网速共用此刷新间隔\n"
             f"范围 {MONITOR_REFRESH_MIN_MS}~{MONITOR_REFRESH_MAX_MS} 毫秒，"
             "越小越实时、开销略高")
         refresh_layout.addWidget(refresh_label)
@@ -155,16 +177,16 @@ class SettingsDialog(QDialog):
         refresh_layout.addStretch()
         layout.addLayout(refresh_layout)
 
-        # ── CPU / 内存警告阈值 ──
+        # ── 使用率警告阈值 ──
         alert_layout = QHBoxLayout()
-        alert_label = QLabel("CPU / 内存警告阈值:")
+        alert_label = QLabel("使用率警告阈值:")
         alert_label.setFixedWidth(130)
         self._alert_threshold_spin = QSpinBox()
         self._alert_threshold_spin.setRange(1, 100)
         self._alert_threshold_spin.setSuffix(" %")
         self._alert_threshold_spin.setFixedWidth(105)
         self._alert_threshold_spin.setToolTip(
-            "CPU 或内存使用率超过此值时显示为红色")
+            "任务栏中启用的 CPU、内存、GPU 或磁盘活动率超过此值时显示为红色")
         alert_layout.addWidget(alert_label)
         alert_layout.addWidget(self._alert_threshold_spin)
         alert_layout.addStretch()
@@ -252,6 +274,9 @@ class SettingsDialog(QDialog):
             self._settings.taskbar_monitor_style)
         if style_idx >= 0:
             self._taskbar_style_combo.setCurrentIndex(style_idx)
+        selected_metrics = set(self._settings.taskbar_monitor_metrics)
+        for value, check in self._taskbar_metric_checks.items():
+            check.setChecked(value in selected_metrics)
         self._autostart_check.setChecked(self._settings.auto_start)
         idx = self._startup_mode_combo.findData(self._settings.startup_mode)
         if idx >= 0:
@@ -279,6 +304,10 @@ class SettingsDialog(QDialog):
         self._settings.taskbar_monitor_enabled = self._taskbar_check.isChecked()
         self._settings.taskbar_monitor_style = (
             self._taskbar_style_combo.currentData())
+        self._settings.taskbar_monitor_metrics = [
+            value for value, check in self._taskbar_metric_checks.items()
+            if check.isChecked()
+        ]
         self._settings.auto_start = self._autostart_check.isChecked()
         self._settings.startup_mode = self._startup_mode_combo.currentData()
         self._settings.monitor_alert_threshold = (
