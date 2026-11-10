@@ -840,7 +840,7 @@ class TaskbarMonitor(QObject):
 
                 x = x1 + pill_pad
                 arrow_rect = QRectF(x, top + sign * arrow_dy, arrow_w, pill_h)
-                self._draw_network_chevron(
+                self._draw_network_arrow(
                     p, arrow_rect, sign < 0, arrow_color, arrow_shadow)
                 x += arrow_w + _GAP_ARROW * s
 
@@ -886,38 +886,44 @@ class TaskbarMonitor(QObject):
         p.end()
 
     @staticmethod
-    def _draw_network_chevron(
+    def _draw_network_arrow(
             p: QPainter, rect: QRectF, up: bool,
             color: QColor, shadow: QColor):
-        """绘制粗线折角上下行图标（^ / v），并用暗色描边提升对比度."""
-        inset_x = max(0.8, rect.width() * 0.08)
-        # 压低图标高度，避免折角显得细长。
-        inset_y = max(2.2, rect.height() * 0.34)
-        left = QPointF(rect.left() + inset_x, rect.bottom() - inset_y)
-        right = QPointF(rect.right() - inset_x, rect.bottom() - inset_y)
-        apex = QPointF(rect.center().x(), rect.top() + inset_y)
-        if not up:
-            left, right = (
-                QPointF(rect.left() + inset_x, rect.top() + inset_y),
-                QPointF(rect.right() - inset_x, rect.top() + inset_y),
-            )
-            apex = QPointF(rect.center().x(), rect.bottom() - inset_y)
+        """绘制紧凑的小型上下行箭头，并用暗色描边提升对比度."""
+        inset_y = max(1.6, rect.height() * 0.20)
+        head_size = min(rect.width() * 0.42, rect.height() * 0.28)
+        center_x = rect.center().x()
+        top = rect.top() + inset_y
+        bottom = rect.bottom() - inset_y
+        if up:
+            tip = QPointF(center_x, top)
+            head_left = QPointF(center_x - head_size, top + head_size)
+            head_right = QPointF(center_x + head_size, top + head_size)
+            shaft_start = QPointF(center_x, top + head_size * 0.75)
+            shaft_end = QPointF(center_x, bottom)
+        else:
+            tip = QPointF(center_x, bottom)
+            head_left = QPointF(center_x - head_size, bottom - head_size)
+            head_right = QPointF(center_x + head_size, bottom - head_size)
+            shaft_start = QPointF(center_x, top)
+            shaft_end = QPointF(center_x, bottom - head_size * 0.75)
 
-        def draw_chevron(pen: QPen, offset: QPointF):
+        def draw_arrow(pen: QPen, offset: QPointF):
             p.setPen(pen)
-            p.drawLine(left + offset, apex + offset)
-            p.drawLine(apex + offset, right + offset)
+            p.drawLine(shaft_start + offset, shaft_end + offset)
+            p.drawLine(tip + offset, head_left + offset)
+            p.drawLine(tip + offset, head_right + offset)
 
         p.save()
-        width = max(2.6, min(3.2, rect.height() * 0.22))
+        width = max(2.4, min(3.2, rect.height() * 0.22))
         shadow_pen = QPen(shadow, width + 1.4)
         shadow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         shadow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        draw_chevron(shadow_pen, QPointF(0.8, 0.8))
+        draw_arrow(shadow_pen, QPointF(0.8, 0.8))
         color_pen = QPen(color, width)
         color_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         color_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        draw_chevron(color_pen, QPointF(0, 0))
+        draw_arrow(color_pen, QPointF(0, 0))
         p.restore()
 
     def _draw_pill(self, p: QPainter, rect: QRectF, ratio: float,
