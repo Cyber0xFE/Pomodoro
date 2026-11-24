@@ -812,7 +812,7 @@ class TaskbarMonitor(QObject):
         # 提高亮度并保持完全不透明，再用暗色偏移层勾出轮廓。
         arrow_color = white
         arrow_shadow = QColor(0, 0, 0, 230)
-        alert = QColor("#FF1744")
+        alert = QColor("#B71C1C")
 
         rows = [
             (self._anim_up, self._up_ceiling, -1),
@@ -1035,7 +1035,7 @@ class TaskbarMonitor(QObject):
 
     @staticmethod
     def _is_alert_color(color: QColor) -> bool:
-        return (color.red(), color.green(), color.blue()) == (255, 23, 68)
+        return (color.red(), color.green(), color.blue()) == (183, 28, 28)
 
     @staticmethod
     def _mix(a: QColor, b: QColor, t: float) -> QColor:
